@@ -95,7 +95,8 @@ const DEFAULT_SETTINGS = {
   defaultChunkSize: 1,
   defaultLanguage: 'en',
   activeBookId: null,
-  isMockMode: false
+  isMockMode: false,
+  hasCompletedOnboarding: false
 };
 
 export async function getAppSettings() {

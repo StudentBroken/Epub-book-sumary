@@ -128,6 +128,15 @@ class App {
     this.rechunkSizeSelect = document.getElementById('rechunk-size-select');
     this.btnConfirmRechunk = document.getElementById('btn-confirm-rechunk');
 
+    // First-Time Setup / Onboarding Modal
+    this.modalApiSetup = document.getElementById('modal-api-setup');
+    this.setupInputApiKey = document.getElementById('setup-input-api-key');
+    this.setupBtnTestKey = document.getElementById('setup-btn-test-key');
+    this.setupSelectModel = document.getElementById('setup-select-model');
+    this.setupSelectLanguage = document.getElementById('setup-select-language');
+    this.setupBtnSaveKey = document.getElementById('setup-btn-save-key');
+    this.setupBtnSkipDemo = document.getElementById('setup-btn-skip-demo');
+
     this.toastContainer = document.getElementById('toast-container');
   }
 
@@ -153,6 +162,11 @@ class App {
 
     this.renderCurrentBook();
     this.setupQueueListeners();
+
+    // First-time running check: prompt for Gemini API Key if not configured yet
+    if (!this.appSettings.apiKey && !this.appSettings.hasCompletedOnboarding) {
+      this.openApiSetupModal();
+    }
   }
 
   bindEvents() {
@@ -259,6 +273,17 @@ class App {
 
     // Rechunk action
     this.btnConfirmRechunk.addEventListener('click', () => this.applyRechunk());
+
+    // First-Time Setup modal actions
+    if (this.setupBtnTestKey) {
+      this.setupBtnTestKey.addEventListener('click', () => this.testSetupApiKey());
+    }
+    if (this.setupBtnSaveKey) {
+      this.setupBtnSaveKey.addEventListener('click', () => this.saveSetupApiKey());
+    }
+    if (this.setupBtnSkipDemo) {
+      this.setupBtnSkipDemo.addEventListener('click', () => this.skipSetupDemo());
+    }
   }
 
   // ================= RENDER LOGIC =================
@@ -778,6 +803,69 @@ class App {
     if (this.headerLanguageName) {
       this.headerLanguageName.textContent = langInfo ? `${langInfo.name} (${langInfo.code.toUpperCase()})` : langCode.toUpperCase();
     }
+  }
+
+  // ================= FIRST-TIME API SETUP MODAL =================
+
+  openApiSetupModal() {
+    if (this.modalApiSetup) {
+      if (this.setupInputApiKey) this.setupInputApiKey.value = this.appSettings.apiKey || '';
+      if (this.setupSelectModel) this.setupSelectModel.value = this.appSettings.defaultModel || 'gemini-3.8-flash';
+      if (this.setupSelectLanguage) this.setupSelectLanguage.value = this.appSettings.defaultLanguage || 'en';
+      this.modalApiSetup.style.display = 'flex';
+    }
+  }
+
+  async testSetupApiKey() {
+    const key = this.setupInputApiKey.value.trim();
+    if (!key) {
+      alert('Please enter your Google Gemini API key first, or click "Explore in Demo Mode".');
+      return;
+    }
+    const model = this.setupSelectModel.value || 'gemini-3.8-flash';
+    this.setupBtnTestKey.disabled = true;
+    this.setupBtnTestKey.textContent = 'Testing...';
+    try {
+      const res = await testGeminiConnection(key, model);
+      alert(res.message);
+      this.showToast('Gemini connection verified successfully!', 'success');
+    } catch (err) {
+      alert(err.message);
+      this.showToast(err.message, 'error');
+    } finally {
+      this.setupBtnTestKey.disabled = false;
+      this.setupBtnTestKey.textContent = 'Test Connection';
+    }
+  }
+
+  async saveSetupApiKey() {
+    const key = this.setupInputApiKey.value.trim();
+    const model = this.setupSelectModel.value || 'gemini-3.8-flash';
+    const language = this.setupSelectLanguage.value || 'en';
+
+    this.appSettings.apiKey = key;
+    this.appSettings.defaultModel = model;
+    this.appSettings.defaultLanguage = language;
+    this.appSettings.hasCompletedOnboarding = true;
+
+    await saveAppSettings(this.appSettings);
+    this.updateHeaderModelPill();
+    this.updateHeaderLanguagePill();
+    this.modalApiSetup.style.display = 'none';
+
+    if (key) {
+      this.showToast('Gemini API key saved! Ready to summarize.', 'success');
+    } else {
+      this.showToast('Exploring in Demo / Mock Mode. Add your key anytime in Settings.', 'default');
+    }
+    this.renderActiveChunk();
+  }
+
+  async skipSetupDemo() {
+    this.appSettings.hasCompletedOnboarding = true;
+    await saveAppSettings(this.appSettings);
+    this.modalApiSetup.style.display = 'none';
+    this.showToast('Welcome! Exploring in Demo Mode. You can add your API key anytime via Settings (⚙️).', 'default');
   }
 
   // ================= RECHUNK MODAL =================
