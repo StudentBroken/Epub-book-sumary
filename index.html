@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LuminaEPUB — AI Literary Companion & Chapter Summarizer</title>
+    <meta name="description" content="Intelligent EPUB chapter summarizer and literary companion powered by Gemini 3.8 Flash, 3.7 Flash, and 3.5 Flash-Lite with sequential generation and local persistence." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app" class="app-container">
+      <!-- Top Navigation Bar -->
+      <header class="app-header">
+        <div class="header-left">
+          <div class="brand">
+            <div class="brand-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-0.5-5"/>
+                <path d="M6 6h10"/>
+                <path d="M6 10h10"/>
+                <path d="M12 2v20"/>
+              </svg>
+            </div>
+            <div class="brand-info">
+              <span class="brand-title">LuminaEPUB</span>
+              <span class="brand-badge">Literary Companion</span>
+            </div>
+          </div>
+
+          <button id="btn-open-library" class="header-book-select" title="Switch or manage your library">
+            <span class="book-icon">📚</span>
+            <span id="header-active-book-title" class="book-title-truncate">Loading library...</span>
+            <span class="chevron-icon">▾</span>
+          </button>
+        </div>
+
+        <div class="header-right">
+          <div id="model-pill" class="status-pill model-badge" title="Active AI Model">
+            <span class="pill-dot"></span>
+            <span id="header-model-name">Gemini 3.8 Flash</span>
+          </div>
+
+          <div id="language-pill" class="status-pill lang-badge" title="Summary Output Language">
+            <span class="pill-dot lang-dot"></span>
+            <span id="header-language-name">English</span>
+          </div>
+
+          <button id="btn-export-markdown" class="btn-ghost" title="Export entire book summary as Markdown">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Export Book</span>
+          </button>
+
+          <button id="btn-upload-epub-nav" class="btn-ghost" title="Upload new EPUB">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            <span>Upload EPUB</span>
+          </button>
+
+          <button id="btn-open-settings" class="btn-icon" title="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Workspace -->
+      <main class="workspace-layout">
+        <!-- Left Sidebar: Chapter List & Sequential Generator Controls -->
+        <aside class="sidebar">
+          <!-- Book Summary Card -->
+          <div class="book-card">
+            <div class="book-meta">
+              <div class="book-cover-wrap">
+                <div id="sidebar-book-cover" class="book-cover-placeholder">📖</div>
+              </div>
+              <div class="book-details">
+                <h2 id="sidebar-book-title" class="book-title">The Time Machine</h2>
+                <p id="sidebar-book-author" class="book-author">H.G. Wells</p>
+                <div class="book-stats-row">
+                  <span id="sidebar-chapter-count">6 Sections</span>
+                  <span>•</span>
+                  <span id="sidebar-total-words">5,790 words</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Progress Indicator -->
+            <div class="progress-section">
+              <div class="progress-labels">
+                <span class="progress-text-label">Summarized</span>
+                <span id="sidebar-progress-percent" class="progress-percent">0% (0/6)</span>
+              </div>
+              <div class="progress-bar-track">
+                <div id="sidebar-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Controlled One-at-a-Time Generation Controls -->
+            <div class="queue-controls">
+              <button id="btn-generate-next" class="btn-primary btn-block">
+                <svg class="btn-icon-svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                <span id="btn-generate-next-text">Generate Next Section (1-by-1)</span>
+              </button>
+
+              <button id="btn-stop-generation" class="btn-danger btn-block" style="display: none;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+                </svg>
+                <span>Stop Generation</span>
+              </button>
+              
+              <div class="queue-sub-buttons">
+                <button id="btn-rechunk-book" class="btn-secondary btn-block" title="Adjust chapter grouping / chunk size">
+                  <span>Chunking (<span id="sidebar-chunk-size-label">1</span>)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chapter / Chunk List Section -->
+          <div class="chapter-list-header">
+            <span class="section-heading">Sections & Chapters</span>
+            <span id="chunk-list-count" class="chip">6 total</span>
+          </div>
+
+          <div id="chapter-list" class="chapter-list-scroll">
+            <!-- Dynamically populated -->
+          </div>
+        </aside>
+
+        <!-- Right Stage: Split Reader & AI Literary Companion -->
+        <section class="reader-stage">
+          <!-- Reader Action Bar -->
+          <div class="reader-toolbar">
+            <div class="reader-toolbar-left">
+              <div class="chunk-nav">
+                <button id="btn-prev-chunk" class="btn-nav" title="Previous section">‹</button>
+                <span id="reader-chunk-indicator" class="chunk-indicator">Section 1 of 6</span>
+                <button id="btn-next-chunk" class="btn-nav" title="Next section">›</button>
+              </div>
+              <h1 id="reader-chunk-title" class="reader-title">Chapter 1: The Machine & The Fourth Dimension</h1>
+            </div>
+
+            <div class="reader-toolbar-right">
+              <!-- View Toggle (Summary / Split / Original) -->
+              <div class="view-mode-toggle">
+                <button class="toggle-btn active" data-view="summary">Summary</button>
+                <button class="toggle-btn" data-view="split">Split View</button>
+                <button class="toggle-btn" data-view="original">Original</button>
+              </div>
+
+              <!-- Single Section Regenerate Button -->
+              <button id="btn-open-regenerate" class="btn-action-primary" title="Regenerate this specific section with customized focus or brevity">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                </svg>
+                <span>Regenerate Section</span>
+              </button>
+
+              <button id="btn-copy-summary" class="btn-icon" title="Copy section summary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Section Meta Sub-bar -->
+          <div class="reader-meta-bar">
+            <div class="meta-item">
+              <span class="meta-label">Original Length:</span>
+              <span id="meta-word-count" class="meta-value">850 words</span>
+            </div>
+            <div class="meta-divider">•</div>
+            <div class="meta-item">
+              <span class="meta-label">Status:</span>
+              <span id="meta-chunk-status" class="status-tag status-pending">Pending</span>
+            </div>
+            <div class="meta-divider">•</div>
+            <div class="meta-item">
+              <span class="meta-label">Model:</span>
+              <span id="meta-model-tag" class="meta-value">Gemini 3.8 Flash</span>
+            </div>
+            <div class="meta-divider">•</div>
+            <div class="meta-item">
+              <span class="meta-label">Brevity:</span>
+              <span id="meta-brevity-tag" class="meta-value">In-Depth Literary Guide</span>
+            </div>
+            <div class="meta-divider">•</div>
+            <div class="meta-item">
+              <span class="meta-label">Language:</span>
+              <span id="meta-language-tag" class="meta-value">English</span>
+            </div>
+          </div>
+
+          <!-- Viewports Container (Supports Split / Summary / Original) -->
+          <div id="reader-viewports" class="reader-viewports view-mode-summary">
+            <!-- Left Pane: Original EPUB Chapter Text -->
+            <div id="original-text-pane" class="reader-pane original-pane">
+              <div class="pane-header">
+                <span class="pane-label">ORIGINAL EPUB TEXT</span>
+                <span id="original-reading-time" class="pane-sub">~4 min read</span>
+              </div>
+              <div id="original-text-content" class="pane-body prose-original">
+                <!-- Original text inserted here -->
+              </div>
+            </div>
+
+            <!-- Right Pane: AI Literary Companion Summary -->
+            <div id="summary-pane" class="reader-pane summary-pane">
+              <div class="pane-header">
+                <span class="pane-label">AI LITERARY COMPANION & CHAPTER BREAKDOWN</span>
+                <div class="pane-header-actions">
+                  <span id="summary-saved-time" class="pane-sub badge-accent">⚡ Saved ~3.5 min</span>
+                </div>
+              </div>
+              <div id="summary-content" class="pane-body prose-summary">
+                <!-- Empty State when pending -->
+                <div id="summary-empty-state" class="empty-state-card">
+                  <div class="empty-icon">✨</div>
+                  <h3>Chapter Not Yet Summarized</h3>
+                  <p>Generate an in-depth literary analysis capturing key arguments, chronological milestones, pivotal anchor references, and thematic takeaways.</p>
+                  <button id="btn-generate-current" class="btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    <span>Generate This Section Now</span>
+                  </button>
+                  <p class="empty-subtext">Processes individually without overwhelming model output limits.</p>
+                </div>
+
+                <!-- Markdown Content rendered here when completed -->
+                <div id="summary-rendered-markdown" class="markdown-body" style="display: none;"></div>
+
+                <!-- Generating Spinner State with Stop Action -->
+                <div id="summary-generating-state" class="generating-state-card" style="display: none;">
+                  <div class="generating-spinner"></div>
+                  <h3 id="generating-state-title">Generating In-Depth Summary...</h3>
+                  <p id="generating-state-sub">Consulting Gemini 3.8 Flash with structured literary anchor analysis</p>
+                  <div class="generating-progress-dot">One section at a time to preserve full nuance</div>
+                  <button id="btn-stop-generation-card" class="btn-danger" style="margin-top: 18px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+                    </svg>
+                    <span>Stop Generation</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Toast Container -->
+      <div id="toast-container" class="toast-container"></div>
+
+      <!-- ================= MODALS ================= -->
+
+      <!-- 1. Book Library & Upload Modal -->
+      <div id="modal-library" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">EPUB Library</h2>
+              <p class="modal-subtitle">All your uploaded books and generated summaries are saved locally in your browser storage.</p>
+            </div>
+            <button class="modal-close" data-close-modal="modal-library">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <!-- Upload Dropzone -->
+            <div id="epub-dropzone" class="upload-dropzone">
+              <input type="file" id="epub-file-input" accept=".epub" style="display: none;" />
+              <div class="dropzone-content">
+                <div class="dropzone-icon">📥</div>
+                <h4>Drop your EPUB book here or <span class="link-btn">browse file</span></h4>
+                <p>EPUB files are parsed entirely in your browser. Stored securely in IndexedDB.</p>
+              </div>
+            </div>
+
+            <div class="library-divider">
+              <span>OR TEST WITH A SAMPLE BOOK</span>
+            </div>
+
+            <button id="btn-load-sample-book" class="btn-secondary btn-block">
+              <span>Load Classic Sample: The Time Machine by H.G. Wells</span>
+            </button>
+
+            <h3 class="library-subheading">Your Saved Books</h3>
+            <div id="library-books-grid" class="library-books-grid">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Settings Modal (Models, API Key, Chunking, Brevity) -->
+      <div id="modal-settings" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog modal-md">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Settings & AI Configuration</h2>
+              <p class="modal-subtitle">Configure Gemini model, API keys, chapter chunking, and output compression.</p>
+            </div>
+            <button class="modal-close" data-close-modal="modal-settings">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <!-- API Key Section -->
+            <div class="form-group">
+              <label class="form-label" for="input-api-key">
+                Google Gemini API Key
+                <span class="label-aside">(Stored locally in browser)</span>
+              </label>
+              <div class="input-with-button">
+                <input type="password" id="input-api-key" class="form-input" placeholder="AIzaSy..." />
+                <button id="btn-test-api-key" class="btn-secondary">Test Connection</button>
+              </div>
+              <div class="form-help">
+                Get an API key from Google AI Studio. Leave empty to use <strong>Demo / Mock Mode</strong>.
+              </div>
+            </div>
+
+            <!-- Model Selection -->
+            <div class="form-group">
+              <label class="form-label">Gemini Model Selection</label>
+              <div class="model-select-grid">
+                <label class="model-option">
+                  <input type="radio" name="setting-model" value="gemini-3.8-flash" checked />
+                  <div class="model-card-box">
+                    <div class="model-header-row">
+                      <span class="model-name">Gemini 3.8 Flash</span>
+                      <span class="chip-badge">Recommended</span>
+                    </div>
+                    <p class="model-desc">Most intelligent Flash model, offering enhanced nuance, complex synthesis, and deep literary reasoning.</p>
+                  </div>
+                </label>
+
+                <label class="model-option">
+                  <input type="radio" name="setting-model" value="gemini-3.7-flash" />
+                  <div class="model-card-box">
+                    <div class="model-header-row">
+                      <span class="model-name">Gemini 3.7 Flash</span>
+                    </div>
+                    <p class="model-desc">Workhorse model designed for long-horizon document comprehension and balanced pacing.</p>
+                  </div>
+                </label>
+
+                <label class="model-option">
+                  <input type="radio" name="setting-model" value="gemini-3.5-flash-lite" />
+                  <div class="model-card-box">
+                    <div class="model-header-row">
+                      <span class="model-name">Gemini 3.5 Flash-Lite</span>
+                    </div>
+                    <p class="model-desc">Ultra-fast, cost-effective model optimized for high-throughput and concise synthesis.</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Chapter Chunking Setting -->
+            <div class="form-group">
+              <label class="form-label" for="select-chunk-size">
+                Default Chapter Chunking (Grouping)
+              </label>
+              <select id="select-chunk-size" class="form-select">
+                <option value="1">1 Chapter per Summary (Recommended for maximum quality & depth)</option>
+                <option value="2">2 Chapters Grouped per Summary</option>
+                <option value="3">3 Chapters Grouped per Summary</option>
+                <option value="4">4 Chapters Grouped per Summary</option>
+              </select>
+              <div class="form-help">
+                Grouping chapters combines adjacent chapters into a single prompt for faster overall synthesis.
+              </div>
+            </div>
+
+            <!-- Output Brevity / Compression Setting -->
+            <div class="form-group">
+              <label class="form-label" for="select-brevity">
+                Default Output Brevity / Compression Level
+              </label>
+              <select id="select-brevity" class="form-select">
+                <option value="compressed">Ultra-Compressed (Executive) (~200 words)</option>
+                <option value="punchy">Short & Punchy (~400 words)</option>
+                <option value="standard">Standard / Balanced (~700 words)</option>
+                <option value="indepth" selected>In-Depth Literary Guide (~1,200 words - Full Template)</option>
+                <option value="exhaustive">Exhaustive & Granular (~1,800+ words)</option>
+              </select>
+            </div>
+
+            <!-- Output Language Setting -->
+            <div class="form-group">
+              <label class="form-label" for="select-output-language">
+                Summary Output Language
+                <span class="label-aside">(UI stays in English)</span>
+              </label>
+              <select id="select-output-language" class="form-select">
+                <option value="en" selected>English (English)</option>
+                <option value="fr">French (Français)</option>
+                <option value="zh">Chinese Simplified (简体中文)</option>
+                <option value="zh-TW">Chinese Traditional (繁體中文)</option>
+                <option value="es">Spanish (Español)</option>
+                <option value="de">German (Deutsch)</option>
+                <option value="ja">Japanese (日本語)</option>
+                <option value="pt">Portuguese (Português)</option>
+                <option value="it">Italian (Italiano)</option>
+                <option value="ru">Russian (Русский)</option>
+                <option value="ko">Korean (한국어)</option>
+                <option value="ar">Arabic (العربية)</option>
+              </select>
+              <div class="form-help">
+                Gemini will generate all summaries, anchors, and takeaways in this chosen language.
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button id="btn-save-settings" class="btn-primary btn-block">Save Settings</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Single Section Regenerate Modal -->
+      <div id="modal-regenerate" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog modal-md">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Regenerate Section</h2>
+              <p id="regen-modal-subtitle" class="modal-subtitle">Customize prompt instructions, brevity, and focus for this chapter.</p>
+            </div>
+            <button class="modal-close" data-close-modal="modal-regenerate">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <!-- Brevity Override -->
+            <div class="form-group">
+              <label class="form-label" for="regen-brevity">Brevity / Compression for This Section</label>
+              <select id="regen-brevity" class="form-select">
+                <option value="compressed">Ultra-Compressed (Executive) (~200 words)</option>
+                <option value="punchy">Short & Punchy (~400 words)</option>
+                <option value="standard">Standard / Balanced (~700 words)</option>
+                <option value="indepth" selected>In-Depth Literary Guide (~1,200 words)</option>
+                <option value="exhaustive">Exhaustive & Granular (~1,800+ words)</option>
+              </select>
+            </div>
+
+            <!-- Analytical Focus Presets -->
+            <div class="form-group">
+              <label class="form-label">Specific Analytical Lens (Preset)</label>
+              <div class="chips-container" id="regen-focus-chips">
+                <button type="button" class="chip-select active" data-preset="all">Balanced (Default)</button>
+                <button type="button" class="chip-select" data-preset="character">Character Psychology</button>
+                <button type="button" class="chip-select" data-preset="philosophy">Philosophical & Thematic</button>
+                <button type="button" class="chip-select" data-preset="actionable">Actionable Rules</button>
+                <button type="button" class="chip-select" data-preset="plot_mechanics">Plot Mechanics & Foreshadowing</button>
+                <button type="button" class="chip-select" data-preset="historical">World-Building & History</button>
+              </div>
+            </div>
+
+            <!-- Custom Prompt Addition -->
+            <div class="form-group">
+              <label class="form-label" for="regen-custom-focus">
+                Custom Focus Addition
+                <span class="label-aside">(Appended to prompt)</span>
+              </label>
+              <textarea id="regen-custom-focus" class="form-textarea" rows="3" placeholder="e.g. Focus specifically on the dialogue between the Traveller and the Editor, and highlight any foreshadowing of social collapse..."></textarea>
+            </div>
+
+            <!-- Model Override for this section -->
+            <div class="form-group">
+              <label class="form-label" for="regen-model">Model for This Regeneration</label>
+              <select id="regen-model" class="form-select">
+                <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recommended)</option>
+                <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
+              </select>
+            </div>
+
+            <!-- Language Override for this section -->
+            <div class="form-group">
+              <label class="form-label" for="regen-language">Output Language for This Section</label>
+              <select id="regen-language" class="form-select">
+                <option value="en">English (English)</option>
+                <option value="fr">French (Français)</option>
+                <option value="zh">Chinese Simplified (简体中文)</option>
+                <option value="zh-TW">Chinese Traditional (繁體中文)</option>
+                <option value="es">Spanish (Español)</option>
+                <option value="de">German (Deutsch)</option>
+                <option value="ja">Japanese (日本語)</option>
+                <option value="pt">Portuguese (Português)</option>
+                <option value="it">Italian (Italiano)</option>
+                <option value="ru">Russian (Русский)</option>
+                <option value="ko">Korean (한국어)</option>
+                <option value="ar">Arabic (العربية)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button id="btn-confirm-regenerate" class="btn-primary btn-block">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+              <span>Regenerate This Section Now</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Re-chunk Book Confirmation Modal -->
+      <div id="modal-rechunk" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog modal-sm">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Re-chunk Chapters</h2>
+              <p class="modal-subtitle">Change how chapters in this book are grouped together.</p>
+            </div>
+            <button class="modal-close" data-close-modal="modal-rechunk">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label" for="rechunk-size-select">Group Size</label>
+              <select id="rechunk-size-select" class="form-select">
+                <option value="1">1 Chapter per Chunk (Individual chapters)</option>
+                <option value="2">2 Chapters per Chunk</option>
+                <option value="3">3 Chapters per Chunk</option>
+                <option value="4">4 Chapters per Chunk</option>
+              </select>
+            </div>
+            <div class="callout-box warning">
+              <div class="callout-icon">⚠️</div>
+              <div class="callout-text">
+                Re-chunking will restructure the sections. Existing summaries for individual chapters will be reset to pending for the new chunk boundaries.
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button id="btn-confirm-rechunk" class="btn-primary btn-block">Apply New Chunking</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
