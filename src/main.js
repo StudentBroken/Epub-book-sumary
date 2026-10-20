@@ -18,6 +18,15 @@ import {
 import { queueManager } from './services/queueManager.js';
 import { testGeminiConnection, SUPPORTED_MODELS } from './services/geminiService.js';
 import { BREVITY_PRESETS, FOCUS_PRESETS, SUPPORTED_LANGUAGES } from './services/promptBuilder.js';
+import {
+  paginateSectionsForEpaper,
+  renderPageToCanvas,
+  canvasTo1BitFrameBuffer,
+  buildEbkBinary,
+  downloadEbkBlob,
+  streamEbkOverSerial,
+  EBK_CONFIG
+} from './services/ebkGenerator.js';
 
 // Configure marked for clean, secure rendering
 marked.setOptions({
@@ -33,6 +42,11 @@ class App {
     this.viewMode = 'summary'; // 'summary' | 'split' | 'original'
     this.selectedRegenPreset = 'all';
 
+    // EBK E-Reader state
+    this.ebkPages = [];
+    this.ebkCurrentPreviewIndex = 0;
+    this.ebkIsGenerating = false;
+
     this.initElements();
     this.bindEvents();
     this.init();
@@ -45,6 +59,7 @@ class App {
     this.headerModelName = document.getElementById('header-model-name');
     this.headerLanguageName = document.getElementById('header-language-name');
     this.btnExportMarkdown = document.getElementById('btn-export-markdown');
+    this.btnOpenExportEbk = document.getElementById('btn-open-export-ebk');
     this.btnUploadEpubNav = document.getElementById('btn-upload-epub-nav');
     this.btnOpenSettings = document.getElementById('btn-open-settings');
 
@@ -135,7 +150,24 @@ class App {
     this.setupSelectModel = document.getElementById('setup-select-model');
     this.setupSelectLanguage = document.getElementById('setup-select-language');
     this.setupBtnSaveKey = document.getElementById('setup-btn-save-key');
-    this.setupBtnSkipDemo = document.getElementById('setup-btn-skip-demo');
+    // EBK Export Modal elements
+    this.modalExportEbk = document.getElementById('modal-export-ebk');
+    this.ebkSourceSelect = document.getElementById('ebk-source-select');
+    this.ebkFontPreset = document.getElementById('ebk-font-preset');
+    this.ebkStatFrames = document.getElementById('ebk-stat-frames');
+    this.ebkStatSize = document.getElementById('ebk-stat-size');
+    this.ebkStatFit = document.getElementById('ebk-stat-fit');
+    this.ebkPreviewCanvas = document.getElementById('ebk-preview-canvas');
+    this.ebkPreviewPageIndicator = document.getElementById('ebk-preview-page-indicator');
+    this.ebkPreviewPageLabel = document.getElementById('ebk-preview-page-label');
+    this.ebkBtnPrevPage = document.getElementById('ebk-btn-prev-page');
+    this.ebkBtnNextPage = document.getElementById('ebk-btn-next-page');
+    this.ebkProgressBox = document.getElementById('ebk-progress-box');
+    this.ebkProgressStatus = document.getElementById('ebk-progress-status');
+    this.ebkProgressPct = document.getElementById('ebk-progress-pct');
+    this.ebkProgressFill = document.getElementById('ebk-progress-fill');
+    this.ebkBtnSerialStream = document.getElementById('ebk-btn-serial-stream');
+    this.ebkBtnDownload = document.getElementById('ebk-btn-download');
 
     this.toastContainer = document.getElementById('toast-container');
   }
@@ -176,6 +208,27 @@ class App {
     this.btnOpenSettings.addEventListener('click', () => this.openSettingsModal());
     this.btnRechunkBook.addEventListener('click', () => this.openRechunkModal());
     this.btnExportMarkdown.addEventListener('click', () => this.exportBookAsMarkdown());
+    if (this.btnOpenExportEbk) {
+      this.btnOpenExportEbk.addEventListener('click', () => this.openExportEbkModal());
+    }
+    if (this.ebkSourceSelect) {
+      this.ebkSourceSelect.addEventListener('change', () => this.updateEbkPaginationAndPreview());
+    }
+    if (this.ebkFontPreset) {
+      this.ebkFontPreset.addEventListener('change', () => this.updateEbkPaginationAndPreview());
+    }
+    if (this.ebkBtnPrevPage) {
+      this.ebkBtnPrevPage.addEventListener('click', () => this.prevEbkPreviewPage());
+    }
+    if (this.ebkBtnNextPage) {
+      this.ebkBtnNextPage.addEventListener('click', () => this.nextEbkPreviewPage());
+    }
+    if (this.ebkBtnDownload) {
+      this.ebkBtnDownload.addEventListener('click', () => this.generateAndDownloadEbk());
+    }
+    if (this.ebkBtnSerialStream) {
+      this.ebkBtnSerialStream.addEventListener('click', () => this.streamEbkToWebSerial());
+    }
 
     // Modal Close buttons
     document.querySelectorAll('[data-close-modal]').forEach(btn => {
@@ -938,6 +991,265 @@ class App {
     }).catch(() => {
       this.showToast('Failed to copy to clipboard', 'error');
     });
+  }
+
+  // ================= EBK (ESP32-S3 E-READER) GENERATION =================
+
+  openExportEbkModal() {
+    if (!this.currentBook) {
+      this.showToast('Please load an EPUB book first', 'error');
+      return;
+    }
+
+    this.ebkCurrentPreviewIndex = 0;
+    this.modalExportEbk.style.display = 'flex';
+    this.updateEbkPaginationAndPreview();
+  }
+
+  updateEbkPaginationAndPreview() {
+    if (!this.currentBook) return;
+
+    const source = this.ebkSourceSelect.value; // 'book' | 'summaries' | 'current'
+    const preset = this.ebkFontPreset.value;   // 'standard' | 'compact' | 'large'
+    const sections = [];
+
+    if (source === 'book') {
+      // Full EPUB book original chapters
+      if (this.currentBook.rawChapters && this.currentBook.rawChapters.length > 0) {
+        this.currentBook.rawChapters.forEach(ch => {
+          sections.push({
+            title: ch.title,
+            text: ch.text,
+            chapterIndex: ch.index
+          });
+        });
+      } else if (this.currentBook.chunks) {
+        this.currentBook.chunks.forEach(ch => {
+          sections.push({
+            title: ch.title,
+            text: ch.text
+          });
+        });
+      }
+    } else if (source === 'summaries') {
+      // AI Chapter summaries
+      const chunksWithSummary = (this.currentBook.chunks || []).filter(c => c.summary);
+      if (chunksWithSummary.length === 0) {
+        this.showToast('No AI summaries generated yet. Generating EBK with placeholder text.', 'default');
+        sections.push({
+          title: this.currentBook.title,
+          text: `No summaries have been generated yet for "${this.currentBook.title}". Run the AI generator first to export full summaries.`
+        });
+      } else {
+        chunksWithSummary.forEach(c => {
+          sections.push({
+            title: c.title,
+            text: c.summary
+          });
+        });
+      }
+    } else if (source === 'current') {
+      // Active section only
+      const chunk = this.currentBook.chunks?.[this.activeChunkIndex];
+      if (chunk) {
+        sections.push({
+          title: chunk.title,
+          text: chunk.summary || chunk.text
+        });
+      }
+    }
+
+    this.ebkPages = paginateSectionsForEpaper(sections, { preset });
+    if (this.ebkPages.length === 0) {
+      this.ebkPages.push({
+        sectionTitle: this.currentBook.title,
+        sectionPageNum: 1,
+        lines: ['[No text available in this selection]'],
+        fontSize: 15,
+        lineHeight: 21,
+        startY: 46
+      });
+    }
+
+    if (this.ebkCurrentPreviewIndex >= this.ebkPages.length) {
+      this.ebkCurrentPreviewIndex = 0;
+    }
+
+    // Update Stats
+    const totalFrames = this.ebkPages.length;
+    // EBK size: 40 byte header + totalFrames*4 index + totalFrames*(4 + 15000) frame blocks
+    const totalSizeBytes = 40 + (totalFrames * 4) + (totalFrames * 15004);
+    const sizeKb = (totalSizeBytes / 1024).toFixed(1);
+    const sizeMb = (totalSizeBytes / (1024 * 1024)).toFixed(2);
+    const displaySize = totalSizeBytes > 1024 * 1024 ? `${sizeMb} MB` : `${sizeKb} KB`;
+
+    this.ebkStatFrames.textContent = `${totalFrames} frame${totalFrames === 1 ? '' : 's'}`;
+    this.ebkStatSize.textContent = displaySize;
+
+    // LittleFS partition fit (~6.4 MB)
+    const partitionMaxBytes = 6.4 * 1024 * 1024;
+    const usedPct = ((totalSizeBytes / partitionMaxBytes) * 100).toFixed(1);
+    if (totalSizeBytes <= partitionMaxBytes) {
+      this.ebkStatFit.textContent = `✓ Fits (${usedPct}% of 6.4MB LittleFS)`;
+      this.ebkStatFit.className = 'ebk-stat-value ebk-stat-green';
+    } else {
+      this.ebkStatFit.textContent = `⚠ Exceeds LittleFS (${usedPct}%)`;
+      this.ebkStatFit.className = 'ebk-stat-value';
+      this.ebkStatFit.style.color = '#ef4444';
+    }
+
+    this.renderEbkPreview();
+  }
+
+  renderEbkPreview() {
+    if (!this.ebkPages || this.ebkPages.length === 0) return;
+    const page = this.ebkPages[this.ebkCurrentPreviewIndex];
+    const totalPages = this.ebkPages.length;
+
+    renderPageToCanvas(
+      page,
+      this.ebkCurrentPreviewIndex,
+      totalPages,
+      this.currentBook.title,
+      this.ebkPreviewCanvas
+    );
+
+    this.ebkPreviewPageIndicator.textContent = `Frame ${this.ebkCurrentPreviewIndex + 1} / ${totalPages}`;
+    this.ebkPreviewPageLabel.textContent = `Frame ${this.ebkCurrentPreviewIndex + 1}`;
+    this.ebkBtnPrevPage.disabled = this.ebkCurrentPreviewIndex === 0;
+    this.ebkBtnNextPage.disabled = this.ebkCurrentPreviewIndex >= totalPages - 1;
+  }
+
+  prevEbkPreviewPage() {
+    if (this.ebkCurrentPreviewIndex > 0) {
+      this.ebkCurrentPreviewIndex--;
+      this.renderEbkPreview();
+    }
+  }
+
+  nextEbkPreviewPage() {
+    if (this.ebkCurrentPreviewIndex < this.ebkPages.length - 1) {
+      this.ebkCurrentPreviewIndex++;
+      this.renderEbkPreview();
+    }
+  }
+
+  async generateAndDownloadEbk() {
+    if (!this.currentBook || !this.ebkPages || this.ebkPages.length === 0) return;
+    if (this.ebkIsGenerating) return;
+
+    this.ebkIsGenerating = true;
+    this.ebkBtnDownload.disabled = true;
+    this.ebkProgressBox.style.display = 'flex';
+    this.ebkProgressFill.style.width = '0%';
+    this.ebkProgressPct.textContent = '0%';
+    this.ebkProgressStatus.textContent = 'Rendering 1-bit frames...';
+
+    const scratchCanvas = document.createElement('canvas');
+    scratchCanvas.width = 400;
+    scratchCanvas.height = 300;
+    const frameBuffers = [];
+    const totalFrames = this.ebkPages.length;
+
+    try {
+      for (let i = 0; i < totalFrames; i++) {
+        const page = this.ebkPages[i];
+        renderPageToCanvas(page, i, totalFrames, this.currentBook.title, scratchCanvas);
+        const frameBuffer = canvasTo1BitFrameBuffer(scratchCanvas);
+        frameBuffers.push(frameBuffer);
+
+        const pct = Math.floor(((i + 1) / totalFrames) * 100);
+        this.ebkProgressFill.style.width = `${pct}%`;
+        this.ebkProgressPct.textContent = `${pct}%`;
+        this.ebkProgressStatus.textContent = `Frame ${i + 1} of ${totalFrames}...`;
+
+        // Yield execution periodically to keep UI responsive
+        if (i % 5 === 0) {
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      this.ebkProgressStatus.textContent = 'Packing binary container (.ebk)...';
+      await new Promise(r => setTimeout(r, 20));
+
+      const fontPreset = this.ebkFontPreset.value;
+      const fontId = EBK_CONFIG.FONT_PRESETS[fontPreset]?.fontId || 0x0010;
+      const ebkBinary = buildEbkBinary(this.currentBook.title, frameBuffers, fontId);
+
+      const filename = `${this.currentBook.title.replace(/[^a-z0-9]/gi, '_')}.ebk`;
+      downloadEbkBlob(ebkBinary, filename);
+
+      this.showToast(`Exported "${filename}" (${(ebkBinary.length / 1024).toFixed(1)} KB) successfully!`, 'success');
+      this.modalExportEbk.style.display = 'none';
+    } catch (err) {
+      console.error('[EBK Export Error]', err);
+      this.showToast(`EBK export failed: ${err.message}`, 'error');
+    } finally {
+      this.ebkIsGenerating = false;
+      this.ebkBtnDownload.disabled = false;
+      this.ebkProgressBox.style.display = 'none';
+    }
+  }
+
+  async streamEbkToWebSerial() {
+    if (!('serial' in navigator)) {
+      alert('Web Serial is only supported in Chrome, Edge, and Opera browsers over HTTPS or localhost.');
+      return;
+    }
+    if (!this.currentBook || !this.ebkPages || this.ebkPages.length === 0) return;
+    if (this.ebkIsGenerating) return;
+
+    let port = null;
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+
+      this.ebkIsGenerating = true;
+      this.ebkBtnSerialStream.disabled = true;
+      this.ebkProgressBox.style.display = 'flex';
+      this.ebkProgressStatus.textContent = 'Rendering & packing .ebk...';
+      this.ebkProgressFill.style.width = '10%';
+      this.ebkProgressPct.textContent = '10%';
+
+      const scratchCanvas = document.createElement('canvas');
+      scratchCanvas.width = 400;
+      scratchCanvas.height = 300;
+      const frameBuffers = [];
+      const totalFrames = this.ebkPages.length;
+
+      for (let i = 0; i < totalFrames; i++) {
+        renderPageToCanvas(this.ebkPages[i], i, totalFrames, this.currentBook.title, scratchCanvas);
+        frameBuffers.push(canvasTo1BitFrameBuffer(scratchCanvas));
+        if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+      }
+
+      const fontPreset = this.ebkFontPreset.value;
+      const fontId = EBK_CONFIG.FONT_PRESETS[fontPreset]?.fontId || 0x0010;
+      const ebkBinary = buildEbkBinary(this.currentBook.title, frameBuffers, fontId);
+
+      this.ebkProgressStatus.textContent = 'Streaming to XIAO ESP32-S3 LittleFS...';
+      await streamEbkOverSerial(port, ebkBinary, (pct, sent, total) => {
+        this.ebkProgressFill.style.width = `${pct}%`;
+        this.ebkProgressPct.textContent = `${pct}%`;
+        this.ebkProgressStatus.textContent = `Streaming: ${Math.round(sent / 1024)} / ${Math.round(total / 1024)} KB (${pct}%)`;
+      });
+
+      this.showToast(`Streamed ${ebkBinary.length} bytes directly to ESP32-S3!`, 'success');
+    } catch (err) {
+      if (err.name !== 'NotFoundError') { // User didn't just cancel port selection
+        console.error('[Web Serial Error]', err);
+        this.showToast(`Web Serial upload failed: ${err.message}`, 'error');
+      }
+    } finally {
+      if (port) {
+        try {
+          await port.close();
+        } catch (_) {}
+      }
+      this.ebkIsGenerating = false;
+      this.ebkBtnSerialStream.disabled = false;
+      this.ebkProgressBox.style.display = 'none';
+    }
   }
 
   // ================= UTILS =================

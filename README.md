@@ -30,6 +30,12 @@ A modern, client-side web application designed to upload EPUB books, store your 
 - **Split Reader & Companion Guide Export**:
   - Side-by-side reading of original EPUB text alongside the AI breakdown.
   - Export the complete companion guide as a clean Markdown file (`.md`).
+- **ESP32-S3 4.2" E-Paper Reader Export (`.ebk`)**:
+  - Directly generates the custom binary container format (`.ebk`) for the **Seeed Studio XIAO ESP32-S3** and 4.2" ESL e-paper reader (SSD1619, 400x300, 1-bit monochrome).
+  - Paginates original EPUB book text or AI summaries into discrete 400x300 frames with chapter header rules, margins, and page numbers.
+  - Interactive 400x300 e-paper preview modal with page flipping before downloading.
+  - Compatible with onboard LittleFS partition (~6.4MB flash storage).
+  - Supports direct Web Serial streaming to connected XIAO ESP32-S3 hardware via Chrome/Edge.
 
 ---
 
