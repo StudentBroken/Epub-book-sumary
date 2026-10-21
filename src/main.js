@@ -30,6 +30,7 @@ import {
   EBK_CONFIG,
   EBK2_CONFIG
 } from './services/ebkGenerator.js';
+import { bleDeviceManager } from './services/bleDeviceManager.js';
 
 // Configure marked for clean, secure rendering
 marked.setOptions({
@@ -174,6 +175,50 @@ class App {
     this.ebkBtnSerialStream = document.getElementById('ebk-btn-serial-stream');
     this.ebkBtnDownload = document.getElementById('ebk-btn-download');
 
+    // E-Reader Studio elements
+    this.btnOpenEreaderStudio = document.getElementById('btn-open-ereader-studio');
+    this.modalEreaderStudio = document.getElementById('modal-ereader-studio');
+    this.studioConnectionStatus = document.getElementById('studio-connection-status');
+    this.studioTabBle = document.getElementById('studio-tab-ble');
+    this.studioTabSerial = document.getElementById('studio-tab-serial');
+    this.studioPanelBle = document.getElementById('studio-panel-ble');
+    this.studioPanelSerial = document.getElementById('studio-panel-serial');
+    this.studioBleConnectBtn = document.getElementById('studio-ble-connect-btn');
+    this.studioBleDisconnectBtn = document.getElementById('studio-ble-disconnect-btn');
+    this.studioSerialConnectBtn = document.getElementById('studio-serial-connect-btn');
+    this.studioSerialDisconnectBtn = document.getElementById('studio-serial-disconnect-btn');
+    this.studioBookCountBadge = document.getElementById('studio-book-count-badge');
+    this.studioRefreshBooksBtn = document.getElementById('studio-refresh-books-btn');
+    this.studioStorageText = document.getElementById('studio-storage-text');
+    this.studioStorageBar = document.getElementById('studio-storage-bar');
+    this.studioBooksEmpty = document.getElementById('studio-books-empty');
+    this.studioBooksTableWrapper = document.getElementById('studio-books-table-wrapper');
+    this.studioBooksTbody = document.getElementById('studio-books-tbody');
+    this.studioSyncActiveBtn = document.getElementById('studio-sync-active-btn');
+    this.studioDropzone = document.getElementById('studio-dropzone');
+    this.studioDropzoneText = document.getElementById('studio-dropzone-text');
+    this.studioDropzoneSub = document.getElementById('studio-dropzone-sub');
+    this.studioFileInput = document.getElementById('studio-file-input');
+    this.studioUploadBtn = document.getElementById('studio-upload-btn');
+    this.studioProgressContainer = document.getElementById('studio-progress-container');
+    this.studioProgressBar = document.getElementById('studio-progress-bar');
+    this.studioProgressStatus = document.getElementById('studio-progress-status');
+    this.studioProgressPct = document.getElementById('studio-progress-pct');
+    this.studioOtaDropzone = document.getElementById('studio-ota-dropzone');
+    this.studioOtaDropzoneText = document.getElementById('studio-ota-dropzone-text');
+    this.studioOtaDropzoneSub = document.getElementById('studio-ota-dropzone-sub');
+    this.studioOtaFileInput = document.getElementById('studio-ota-file-input');
+    this.studioOtaFlashBtn = document.getElementById('studio-ota-flash-btn');
+    this.studioOtaProgressContainer = document.getElementById('studio-ota-progress-container');
+    this.studioOtaProgressBar = document.getElementById('studio-ota-progress-bar');
+    this.studioOtaProgressStatus = document.getElementById('studio-ota-progress-status');
+    this.studioOtaProgressPct = document.getElementById('studio-ota-progress-pct');
+    this.studioTerminal = document.getElementById('studio-terminal');
+    this.studioClearTermBtn = document.getElementById('studio-clear-term-btn');
+
+    this.studioSelectedFile = null;
+    this.studioSelectedOtaFile = null;
+
     this.toastContainer = document.getElementById('toast-container');
   }
 
@@ -204,6 +249,8 @@ class App {
     if (!this.appSettings.apiKey && !this.appSettings.hasCompletedOnboarding) {
       this.openApiSetupModal();
     }
+
+    this.setupBleDeviceListeners();
   }
 
   bindEvents() {
@@ -213,9 +260,13 @@ class App {
     this.btnOpenSettings.addEventListener('click', () => this.openSettingsModal());
     this.btnRechunkBook.addEventListener('click', () => this.openRechunkModal());
     this.btnExportMarkdown.addEventListener('click', () => this.exportBookAsMarkdown());
+    if (this.btnOpenEreaderStudio) {
+      this.btnOpenEreaderStudio.addEventListener('click', () => this.openEreaderStudioModal());
+    }
     if (this.btnOpenExportEbk) {
       this.btnOpenExportEbk.addEventListener('click', () => this.openExportEbkModal());
     }
+    this.bindStudioEvents();
     if (this.ebkFormatSelect) {
       this.ebkFormatSelect.addEventListener('change', () => this.updateEbkPaginationAndPreview());
     }
@@ -1418,6 +1469,491 @@ class App {
       this.ebkIsGenerating = false;
       this.ebkBtnSerialStream.disabled = false;
       this.ebkProgressBox.style.display = 'none';
+    }
+  }
+
+  // ================= E-READER STUDIO IMPLEMENTATION =================
+
+  setupBleDeviceListeners() {
+    bleDeviceManager.on('stateChange', ({ connected, type }) => {
+      this.updateStudioConnectionUI(connected, type);
+    });
+
+    bleDeviceManager.on('log', ({ message, color }) => {
+      this.appendStudioLog(message, color);
+    });
+
+    bleDeviceManager.on('libraryUpdate', (data) => {
+      this.renderStudioLibrary(data);
+    });
+
+    bleDeviceManager.on('progress', ({ type, status, pct }) => {
+      this.updateStudioProgress(type, status, pct);
+    });
+  }
+
+  openEreaderStudioModal() {
+    if (!this.modalEreaderStudio) return;
+    this.modalEreaderStudio.style.display = 'flex';
+
+    // If already connected, auto-refresh device storage and library
+    if (bleDeviceManager.isConnected() && bleDeviceManager.getConnectionType() === 'ble') {
+      bleDeviceManager.requestBookList().catch(() => {});
+    }
+  }
+
+  bindStudioEvents() {
+    if (!this.studioTabBle) return;
+
+    // Tabs
+    this.studioTabBle.addEventListener('click', () => {
+      bleDeviceManager.activeMode = 'ble';
+      this.studioTabBle.classList.add('active');
+      this.studioTabSerial.classList.remove('active');
+      this.studioPanelBle.style.display = 'block';
+      this.studioPanelSerial.style.display = 'none';
+      this.checkStudioUploadReady();
+    });
+
+    this.studioTabSerial.addEventListener('click', () => {
+      bleDeviceManager.activeMode = 'serial';
+      this.studioTabSerial.classList.add('active');
+      this.studioTabBle.classList.remove('active');
+      this.studioPanelSerial.style.display = 'block';
+      this.studioPanelBle.style.display = 'none';
+      this.checkStudioUploadReady();
+    });
+
+    // BLE Connect / Disconnect
+    this.studioBleConnectBtn.addEventListener('click', async () => {
+      try {
+        await bleDeviceManager.connectBLE();
+        this.showToast('Paired successfully with ESP32-Ereader over BLE!', 'success');
+      } catch (err) {
+        if (err.name !== 'NotFoundError') {
+          this.showToast(`BLE Connection Failed: ${err.message}`, 'error');
+        }
+      }
+    });
+
+    this.studioBleDisconnectBtn.addEventListener('click', () => {
+      bleDeviceManager.disconnectBLE();
+      this.showToast('Disconnected from BLE E-Reader.', 'default');
+    });
+
+    // Serial Connect / Disconnect
+    this.studioSerialConnectBtn.addEventListener('click', async () => {
+      try {
+        await bleDeviceManager.connectSerial();
+        this.showToast('Connected to USB Serial port!', 'success');
+      } catch (err) {
+        if (err.name !== 'NotFoundError') {
+          this.showToast(`Serial Connection Failed: ${err.message}`, 'error');
+        }
+      }
+    });
+
+    this.studioSerialDisconnectBtn.addEventListener('click', async () => {
+      await bleDeviceManager.disconnectSerial();
+      this.showToast('Disconnected from serial port.', 'default');
+    });
+
+    // Refresh Library button
+    this.studioRefreshBooksBtn.addEventListener('click', async () => {
+      try {
+        await bleDeviceManager.requestBookList();
+      } catch (err) {
+        this.showToast(`Failed to refresh library: ${err.message}`, 'error');
+      }
+    });
+
+    // Sync currently loaded book
+    this.studioSyncActiveBtn.addEventListener('click', () => {
+      this.syncActiveBookToEreader();
+    });
+
+    // File Drag & Drop for .ebk
+    this.studioDropzone.addEventListener('click', () => this.studioFileInput.click());
+    this.studioFileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) this.handleStudioFile(e.target.files[0]);
+    });
+    this.studioDropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      this.studioDropzone.style.borderColor = 'var(--accent-cyan)';
+    });
+    this.studioDropzone.addEventListener('dragleave', () => {
+      this.studioDropzone.style.borderColor = 'var(--border)';
+    });
+    this.studioDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.studioDropzone.style.borderColor = 'var(--border)';
+      if (e.dataTransfer.files.length > 0) this.handleStudioFile(e.dataTransfer.files[0]);
+    });
+
+    this.studioUploadBtn.addEventListener('click', () => {
+      this.uploadStudioSelectedFile();
+    });
+
+    // OTA File Drag & Drop for firmware.bin
+    this.studioOtaDropzone.addEventListener('click', () => this.studioOtaFileInput.click());
+    this.studioOtaFileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) this.handleStudioOtaFile(e.target.files[0]);
+    });
+    this.studioOtaDropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      this.studioOtaDropzone.style.borderColor = '#c084fc';
+    });
+    this.studioOtaDropzone.addEventListener('dragleave', () => {
+      this.studioOtaDropzone.style.borderColor = 'rgba(192, 132, 252, 0.4)';
+    });
+    this.studioOtaDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.studioOtaDropzone.style.borderColor = 'rgba(192, 132, 252, 0.4)';
+      if (e.dataTransfer.files.length > 0) this.handleStudioOtaFile(e.dataTransfer.files[0]);
+    });
+
+    this.studioOtaFlashBtn.addEventListener('click', () => {
+      this.flashStudioOtaFile();
+    });
+
+    // Terminal clear
+    this.studioClearTermBtn.addEventListener('click', () => {
+      this.studioTerminal.innerHTML = '';
+    });
+  }
+
+  handleStudioFile(file) {
+    if (!file.name.toLowerCase().endsWith('.ebk')) {
+      alert('Please choose an .ebk book container file.');
+      return;
+    }
+    this.studioSelectedFile = file;
+    this.studioDropzone.classList.add('has-file');
+    this.studioDropzoneText.textContent = `Selected: ${file.name}`;
+    this.studioDropzoneSub.textContent = `File Size: ${(file.size / 1024).toFixed(1)} KB (${file.size.toLocaleString()} bytes)`;
+    bleDeviceManager.log(`[FILE] Loaded book container '${file.name}' (${(file.size / 1024).toFixed(1)} KB).`);
+    this.checkStudioUploadReady();
+  }
+
+  handleStudioOtaFile(file) {
+    if (!file.name.toLowerCase().endsWith('.bin')) {
+      alert('Please select a compiled firmware .bin binary (e.g. from .pio/build/seeed_xiao_esp32s3/firmware.bin).');
+      return;
+    }
+    if (file.size > 1835008) {
+      alert(`File is too large for the OTA partition! Size: ${(file.size / 1024).toFixed(0)} KB (max 1792 KB).`);
+      return;
+    }
+    this.studioSelectedOtaFile = file;
+    this.studioOtaDropzone.classList.add('has-file');
+    this.studioOtaDropzoneText.textContent = `Selected Firmware: ${file.name}`;
+    this.studioOtaDropzoneSub.textContent = `Binary Size: ${(file.size / 1024).toFixed(1)} KB (${file.size.toLocaleString()} bytes)`;
+    bleDeviceManager.log(`[OTA FILE] Loaded firmware '${file.name}' (${(file.size / 1024).toFixed(1)} KB).`, '#c084fc');
+    this.checkStudioUploadReady();
+  }
+
+  checkStudioUploadReady() {
+    const isConnected = bleDeviceManager.isConnected();
+    const isTransferring = bleDeviceManager.isTransferring || bleDeviceManager.isFlashingOta;
+
+    if (this.studioUploadBtn) {
+      this.studioUploadBtn.disabled = !isConnected || !this.studioSelectedFile || isTransferring;
+    }
+    if (this.studioSyncActiveBtn) {
+      this.studioSyncActiveBtn.disabled = !isConnected || !this.currentBook || isTransferring;
+    }
+    if (this.studioOtaFlashBtn) {
+      this.studioOtaFlashBtn.disabled = !(bleDeviceManager.bleServer && bleDeviceManager.bleServer.connected) || !this.studioSelectedOtaFile || isTransferring;
+    }
+  }
+
+  updateStudioConnectionUI(connected, type) {
+    if (!this.studioConnectionStatus) return;
+
+    this.studioConnectionStatus.className = 'studio-badge';
+    const label = this.studioConnectionStatus.querySelector('span:last-child');
+
+    if (connected) {
+      if (type === 'ble') {
+        this.studioConnectionStatus.classList.add('connected-ble');
+        label.textContent = 'BLE Connected (ESP32-Ereader)';
+        this.studioBleConnectBtn.disabled = true;
+        this.studioBleDisconnectBtn.disabled = false;
+        this.studioRefreshBooksBtn.disabled = false;
+      } else {
+        this.studioConnectionStatus.classList.add('connected-serial');
+        label.textContent = 'USB Serial Connected';
+        this.studioSerialConnectBtn.disabled = true;
+        this.studioSerialDisconnectBtn.disabled = false;
+        this.studioRefreshBooksBtn.disabled = true;
+      }
+    } else {
+      label.textContent = 'Disconnected';
+      this.studioBleConnectBtn.disabled = false;
+      this.studioBleDisconnectBtn.disabled = true;
+      this.studioSerialConnectBtn.disabled = false;
+      this.studioSerialDisconnectBtn.disabled = true;
+      this.studioRefreshBooksBtn.disabled = true;
+    }
+
+    this.checkStudioUploadReady();
+  }
+
+  renderStudioLibrary(data) {
+    if (!this.studioBooksTbody) return;
+
+    if (!data) {
+      this.studioBooksEmpty.style.display = 'block';
+      this.studioBooksEmpty.textContent = 'Connect to your E-Reader via BLE to view and manage books stored on the device.';
+      this.studioBooksTableWrapper.style.display = 'none';
+      this.studioBookCountBadge.textContent = '0 Books';
+      this.studioStorageText.textContent = '-- / -- MB used (--%)';
+      this.studioStorageBar.style.width = '0%';
+      return;
+    }
+
+    // Update storage bar
+    const totalBytes = data.total || 0;
+    const usedBytes = data.used || 0;
+    if (totalBytes > 0) {
+      const usedMB = (usedBytes / 1048576).toFixed(2);
+      const totalMB = (totalBytes / 1048576).toFixed(2);
+      const pct = Math.min(100, Math.round((usedBytes / totalBytes) * 100));
+      this.studioStorageText.textContent = `${usedMB} / ${totalMB} MB used (${pct}%)`;
+      this.studioStorageBar.style.width = `${pct}%`;
+    }
+
+    const books = data.books || [];
+    this.studioBookCountBadge.textContent = `${books.length} Book${books.length === 1 ? '' : 's'}`;
+
+    if (books.length === 0) {
+      this.studioBooksEmpty.style.display = 'block';
+      this.studioBooksEmpty.textContent = 'No .ebk books found on LittleFS flash storage. Upload a book below to begin reading!';
+      this.studioBooksTableWrapper.style.display = 'none';
+      return;
+    }
+
+    this.studioBooksEmpty.style.display = 'none';
+    this.studioBooksTableWrapper.style.display = 'block';
+    this.studioBooksTbody.innerHTML = '';
+
+    const activePath = data.active || '';
+
+    books.forEach(b => {
+      const tr = document.createElement('tr');
+      const isActive = (b.file === activePath || (b.file && activePath.endsWith(b.file)));
+
+      // Title & filename
+      const tdTitle = document.createElement('td');
+      const titleRow = document.createElement('div');
+      titleRow.style.fontWeight = '600';
+      titleRow.style.display = 'flex';
+      titleRow.style.alignItems = 'center';
+      titleRow.style.gap = '6px';
+      titleRow.textContent = b.title || b.file;
+
+      if (isActive) {
+        const pill = document.createElement('span');
+        pill.style.cssText = 'background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid #10b981; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em;';
+        pill.textContent = 'Active';
+        titleRow.appendChild(pill);
+      }
+
+      const fnameRow = document.createElement('div');
+      fnameRow.style.cssText = 'font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-top: 2px;';
+      fnameRow.textContent = b.file;
+
+      tdTitle.appendChild(titleRow);
+      tdTitle.appendChild(fnameRow);
+
+      // Size
+      const tdSize = document.createElement('td');
+      tdSize.style.fontFamily = 'var(--font-mono)';
+      tdSize.textContent = (b.size >= 1048576) ? `${(b.size / 1048576).toFixed(2)} MB` : `${(b.size / 1024).toFixed(1)} KB`;
+
+      // Progress
+      const tdProg = document.createElement('td');
+      tdProg.style.fontFamily = 'var(--font-mono)';
+      if (b.tot > 0) {
+        const progPct = Math.round((Math.max(1, b.cur) / b.tot) * 100);
+        tdProg.textContent = `Page ${b.cur || 1}/${b.tot} (${progPct}%)`;
+      } else {
+        tdProg.textContent = 'New';
+      }
+
+      // Actions
+      const tdActions = document.createElement('td');
+      const actionsDiv = document.createElement('div');
+      actionsDiv.style.cssText = 'display: flex; justify-content: flex-end; gap: 6px; align-items: center;';
+
+      if (!isActive) {
+        const btnRead = document.createElement('button');
+        btnRead.className = 'btn-ghost';
+        btnRead.style.cssText = 'padding: 3px 8px; font-size: 11px; color: var(--accent-cyan); border-color: rgba(56, 189, 248, 0.3);';
+        btnRead.textContent = 'Read';
+        btnRead.addEventListener('click', async () => {
+          try {
+            await bleDeviceManager.selectActiveBook(b.file);
+            this.showToast(`Switched active book to "${b.title || b.file}"!`, 'success');
+          } catch (err) {
+            this.showToast(`Failed to switch book: ${err.message}`, 'error');
+          }
+        });
+        actionsDiv.appendChild(btnRead);
+      }
+
+      const btnRename = document.createElement('button');
+      btnRename.className = 'btn-ghost';
+      btnRename.style.cssText = 'padding: 3px 8px; font-size: 11px; color: #cbd5e1;';
+      btnRename.textContent = 'Rename';
+      btnRename.addEventListener('click', async () => {
+        const cleanOld = b.file.startsWith('/') ? b.file.substring(1) : b.file;
+        const newName = prompt(`Enter new filename for "${cleanOld}":`, cleanOld);
+        if (!newName || newName.trim() === '' || newName.trim() === cleanOld) return;
+        try {
+          await bleDeviceManager.renameBook(b.file, newName);
+          this.showToast(`Book renamed to "${newName}"!`, 'success');
+        } catch (err) {
+          this.showToast(`Failed to rename book: ${err.message}`, 'error');
+        }
+      });
+      actionsDiv.appendChild(btnRename);
+
+      const btnDelete = document.createElement('button');
+      btnDelete.className = 'btn-ghost';
+      btnDelete.style.cssText = 'padding: 3px 8px; font-size: 11px; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);';
+      btnDelete.textContent = 'Delete';
+      btnDelete.addEventListener('click', async () => {
+        if (!confirm(`Are you sure you want to permanently delete "${b.file}" from E-Reader storage?`)) return;
+        try {
+          await bleDeviceManager.deleteBook(b.file);
+          this.showToast(`Deleted "${b.file}" from E-Reader!`, 'success');
+        } catch (err) {
+          this.showToast(`Failed to delete book: ${err.message}`, 'error');
+        }
+      });
+      actionsDiv.appendChild(btnDelete);
+
+      tdActions.appendChild(actionsDiv);
+
+      tr.appendChild(tdTitle);
+      tr.appendChild(tdSize);
+      tr.appendChild(tdProg);
+      tr.appendChild(tdActions);
+      this.studioBooksTbody.appendChild(tr);
+    });
+  }
+
+  async syncActiveBookToEreader() {
+    if (!this.currentBook) return;
+
+    try {
+      this.studioProgressContainer.style.display = 'block';
+      this.studioProgressStatus.textContent = 'Building .ebk v2 structured container...';
+      this.studioProgressBar.style.width = '10%';
+      this.studioProgressPct.textContent = '10%';
+
+      const sections = this.getEbkSections();
+      const ebkBinary = buildEbk2Binary({
+        title: this.currentBook.title || 'Untitled Book',
+        author: this.currentBook.author || 'Unknown',
+        chapters: sections
+      });
+
+      const bookTitle = (this.currentBook.title || 'book').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+      const filename = `${bookTitle}.ebk`;
+
+      if (bleDeviceManager.activeMode === 'ble') {
+        if (!bleDeviceManager.isConnected() || bleDeviceManager.getConnectionType() !== 'ble') {
+          await bleDeviceManager.connectBLE();
+        }
+        await bleDeviceManager.uploadBookBLE(ebkBinary, filename);
+      } else {
+        if (!bleDeviceManager.isConnected() || bleDeviceManager.getConnectionType() !== 'serial') {
+          await bleDeviceManager.connectSerial();
+        }
+        await bleDeviceManager.uploadBookSerial(ebkBinary);
+      }
+
+      this.showToast(`Book "${filename}" successfully synced to your E-Reader!`, 'success');
+    } catch (err) {
+      if (err.name !== 'NotFoundError') {
+        this.showToast(`Sync failed: ${err.message}`, 'error');
+      }
+    } finally {
+      this.checkStudioUploadReady();
+      setTimeout(() => {
+        if (!bleDeviceManager.isTransferring) {
+          this.studioProgressContainer.style.display = 'none';
+        }
+      }, 2000);
+    }
+  }
+
+  async uploadStudioSelectedFile() {
+    if (!this.studioSelectedFile) return;
+
+    try {
+      this.studioProgressContainer.style.display = 'block';
+
+      if (bleDeviceManager.activeMode === 'ble') {
+        await bleDeviceManager.uploadBookBLE(this.studioSelectedFile, this.studioSelectedFile.name);
+      } else {
+        await bleDeviceManager.uploadBookSerial(this.studioSelectedFile);
+      }
+
+      this.showToast(`Successfully uploaded "${this.studioSelectedFile.name}" to E-Reader!`, 'success');
+    } catch (err) {
+      this.showToast(`Upload failed: ${err.message}`, 'error');
+    } finally {
+      this.checkStudioUploadReady();
+      setTimeout(() => {
+        if (!bleDeviceManager.isTransferring) {
+          this.studioProgressContainer.style.display = 'none';
+        }
+      }, 2000);
+    }
+  }
+
+  async flashStudioOtaFile() {
+    if (!this.studioSelectedOtaFile) return;
+
+    if (!confirm(`Flash firmware "${this.studioSelectedOtaFile.name}" to your ESP32-S3 over BLE? The e-reader will verify checksum and reboot automatically.`)) {
+      return;
+    }
+
+    try {
+      this.studioOtaProgressContainer.style.display = 'block';
+      await bleDeviceManager.flashFirmwareBLE(this.studioSelectedOtaFile, this.studioSelectedOtaFile.name);
+      this.showToast('Firmware update complete! E-Reader is rebooting...', 'success');
+    } catch (err) {
+      this.showToast(`OTA Update failed: ${err.message}`, 'error');
+    } finally {
+      this.checkStudioUploadReady();
+    }
+  }
+
+  appendStudioLog(message, color = '') {
+    if (!this.studioTerminal) return;
+    const entry = document.createElement('div');
+    entry.style.marginBottom = '2px';
+    if (color) entry.style.color = color;
+    entry.textContent = message;
+    this.studioTerminal.appendChild(entry);
+    this.studioTerminal.scrollTop = this.studioTerminal.scrollHeight;
+  }
+
+  updateStudioProgress(type, status, pct) {
+    if (type === 'ota') {
+      if (this.studioOtaProgressContainer) this.studioOtaProgressContainer.style.display = 'block';
+      if (this.studioOtaProgressStatus) this.studioOtaProgressStatus.textContent = status;
+      if (this.studioOtaProgressBar) this.studioOtaProgressBar.style.width = `${pct}%`;
+      if (this.studioOtaProgressPct) this.studioOtaProgressPct.textContent = `${pct}%`;
+    } else {
+      if (this.studioProgressContainer) this.studioProgressContainer.style.display = 'block';
+      if (this.studioProgressStatus) this.studioProgressStatus.textContent = status;
+      if (this.studioProgressBar) this.studioProgressBar.style.width = `${pct}%`;
+      if (this.studioProgressPct) this.studioProgressPct.textContent = `${pct}%`;
     }
   }
 
