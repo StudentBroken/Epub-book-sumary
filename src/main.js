@@ -26,6 +26,7 @@ import {
   buildEbk2Binary,
   downloadEbkBlob,
   streamEbkOverSerial,
+  streamEbkOverBLE,
   EBK_CONFIG,
   EBK2_CONFIG
 } from './services/ebkGenerator.js';
@@ -169,6 +170,7 @@ class App {
     this.ebkProgressStatus = document.getElementById('ebk-progress-status');
     this.ebkProgressPct = document.getElementById('ebk-progress-pct');
     this.ebkProgressFill = document.getElementById('ebk-progress-fill');
+    this.ebkBtnBleStream = document.getElementById('ebk-btn-ble-stream');
     this.ebkBtnSerialStream = document.getElementById('ebk-btn-serial-stream');
     this.ebkBtnDownload = document.getElementById('ebk-btn-download');
 
@@ -231,6 +233,9 @@ class App {
     }
     if (this.ebkBtnDownload) {
       this.ebkBtnDownload.addEventListener('click', () => this.generateAndDownloadEbk());
+    }
+    if (this.ebkBtnBleStream) {
+      this.ebkBtnBleStream.addEventListener('click', () => this.syncEbkToWebBLE());
     }
     if (this.ebkBtnSerialStream) {
       this.ebkBtnSerialStream.addEventListener('click', () => this.streamEbkToWebSerial());
@@ -1256,6 +1261,88 @@ class App {
       this.ebkIsGenerating = false;
       this.ebkBtnDownload.disabled = false;
       this.ebkProgressBox.style.display = 'none';
+    }
+  }
+
+  async syncEbkToWebBLE() {
+    if (!navigator.bluetooth) {
+      alert('Web Bluetooth is only supported in Chrome, Edge, Opera, or Bluefy (iOS) over HTTPS or localhost.');
+      return;
+    }
+    if (!this.currentBook) return;
+    if (this.ebkIsGenerating) return;
+
+    const format = this.ebkFormatSelect ? this.ebkFormatSelect.value : 'v2';
+    const sections = this.getEbkSections();
+    if (!sections || sections.length === 0) return;
+
+    try {
+      this.ebkIsGenerating = true;
+      if (this.ebkBtnBleStream) this.ebkBtnBleStream.disabled = true;
+      if (this.ebkBtnSerialStream) this.ebkBtnSerialStream.disabled = true;
+      if (this.ebkBtnDownload) this.ebkBtnDownload.disabled = true;
+      this.ebkProgressBox.style.display = 'flex';
+      this.ebkProgressStatus.textContent = 'Preparing .ebk container for e-reader...';
+      this.ebkProgressFill.style.width = '10%';
+      this.ebkProgressPct.textContent = '10%';
+
+      let ebkBinary = null;
+
+      if (format === 'v2') {
+        ebkBinary = buildEbk2Binary({
+          title: this.currentBook.title || 'Untitled Book',
+          author: this.currentBook.author || 'Unknown',
+          chapters: sections
+        });
+      } else {
+        const scratchCanvas = document.createElement('canvas');
+        scratchCanvas.width = 400;
+        scratchCanvas.height = 300;
+        const frameBuffers = [];
+        const totalFrames = this.ebkPages.length;
+
+        for (let i = 0; i < totalFrames; i++) {
+          renderPageToCanvas(this.ebkPages[i], i, totalFrames, this.currentBook.title, scratchCanvas);
+          frameBuffers.push(canvasTo1BitFrameBuffer(scratchCanvas));
+          if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+        }
+
+        const fontPreset = this.ebkFontPreset ? this.ebkFontPreset.value : 'standard';
+        const fontId = EBK_CONFIG.FONT_PRESETS[fontPreset]?.fontId || 0x0010;
+        ebkBinary = buildEbkBinary(this.currentBook.title, frameBuffers, fontId);
+      }
+
+      const bookTitle = (this.currentBook.title || 'book').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+      const filename = `${bookTitle}.ebk`;
+
+      this.ebkProgressStatus.textContent = 'Pairing with ESP32-Ereader over Bluetooth...';
+      this.showToast('Select "ESP32-Ereader" in the Bluetooth dialog (make sure BLE pairing countdown is active on device)', 'default');
+
+      const result = await streamEbkOverBLE(ebkBinary, filename, (pct, sent, total) => {
+        this.ebkProgressFill.style.width = `${pct}%`;
+        this.ebkProgressPct.textContent = `${pct}%`;
+        this.ebkProgressStatus.textContent = `Streaming via BLE: ${Math.round(sent / 1024)} / ${Math.round(total / 1024)} KB (${pct}%)`;
+      });
+
+      this.showToast(`Wirelessly synced "${result.filename}" (${Math.round(result.bytes / 1024)} KB) over BLE!`, 'success');
+      this.ebkProgressStatus.textContent = 'Sync complete! E-Reader is opening book.';
+      this.ebkProgressFill.style.width = '100%';
+      this.ebkProgressPct.textContent = '100%';
+    } catch (err) {
+      if (err.name !== 'NotFoundError') { // User didn't just cancel Bluetooth dialog
+        console.error('[Web BLE Error]', err);
+        this.showToast(`Web BLE sync failed: ${err.message}`, 'error');
+      }
+    } finally {
+      this.ebkIsGenerating = false;
+      if (this.ebkBtnBleStream) this.ebkBtnBleStream.disabled = false;
+      if (this.ebkBtnSerialStream) this.ebkBtnSerialStream.disabled = false;
+      if (this.ebkBtnDownload) this.ebkBtnDownload.disabled = false;
+      setTimeout(() => {
+        if (!this.ebkIsGenerating) {
+          this.ebkProgressBox.style.display = 'none';
+        }
+      }, 1800);
     }
   }
 

@@ -548,3 +548,137 @@ export async function streamEbkOverSerial(port, uint8Array, onProgress) {
     writer.releaseLock();
   }
 }
+
+/**
+ * BLE Service & Characteristic UUIDs matching ESP32-S3 firmware ble_sync_manager.h
+ */
+export const BLE_CONFIG = {
+  SERVICE_UUID: '19b10000-e8f2-537e-4f6c-d104768a1214',
+  CTRL_CHAR_UUID: '19b10001-e8f2-537e-4f6c-d104768a1214',
+  DATA_CHAR_UUID: '19b10002-e8f2-537e-4f6c-d104768a1214'
+};
+
+/**
+ * Wirelessly streams .ebk container bytes over Web Bluetooth (BLE) directly
+ * to XIAO ESP32-S3 e-reader LittleFS storage.
+ *
+ * @param {Uint8Array} uint8Array Binary .ebk payload
+ * @param {string} filename Destination filename (e.g. 'book.ebk')
+ * @param {Function} [onProgress] Progress callback (percent, sentBytes, totalBytes)
+ * @returns {Promise<{success: boolean, filename: string, bytes: number}>}
+ */
+export async function streamEbkOverBLE(uint8Array, filename = 'book.ebk', onProgress) {
+  if (!navigator.bluetooth) {
+    throw new Error('Web Bluetooth is not supported in this browser. Please use Chrome, Edge, Opera, or Bluefy (iOS).');
+  }
+
+  const safeFilename = (filename || 'book.ebk').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  const finalFilename = safeFilename.endsWith('.ebk') ? safeFilename : `${safeFilename}.ebk`;
+
+  // 1. Request Bluetooth device
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ name: 'ESP32-Ereader' }],
+    optionalServices: [BLE_CONFIG.SERVICE_UUID]
+  });
+
+  const server = await device.gatt.connect();
+  let ctrlChar = null;
+  let dataChar = null;
+
+  try {
+    const service = await server.getPrimaryService(BLE_CONFIG.SERVICE_UUID);
+    ctrlChar = await service.getCharacteristic(BLE_CONFIG.CTRL_CHAR_UUID);
+    dataChar = await service.getCharacteristic(BLE_CONFIG.DATA_CHAR_UUID);
+
+    let readyResolver = null;
+    let finishResolver = null;
+
+    const onNotification = (event) => {
+      const val = event.target.value;
+      if (val.byteLength < 1) return;
+      const status = val.getUint8(0);
+
+      if (status === 0x01) { // STATUS_READY
+        if (readyResolver) {
+          readyResolver();
+          readyResolver = null;
+        }
+      } else if (status === 0x02) { // STATUS_SUCCESS
+        if (finishResolver) {
+          finishResolver({ success: true });
+          finishResolver = null;
+        }
+      } else if (status === 0x03) { // STATUS_ERROR
+        if (finishResolver) {
+          finishResolver({ success: false, reason: 'E-Reader reported storage/write error' });
+          finishResolver = null;
+        }
+      } else if (status === 0x04) { // STATUS_ABORT
+        if (finishResolver) {
+          finishResolver({ success: false, reason: 'Transfer aborted by E-Reader' });
+          finishResolver = null;
+        }
+      }
+    };
+
+    await ctrlChar.startNotifications();
+    ctrlChar.addEventListener('characteristicvaluechanged', onNotification);
+
+    const readyPromise = new Promise((resolve, reject) => {
+      readyResolver = resolve;
+      setTimeout(() => reject(new Error('Timeout waiting for E-Reader READY handshake')), 6000);
+    });
+
+    // Send CMD_START_TRANSFER packet (Byte 0: 0x01, Bytes 1..4: fileSize LE, Bytes 5..N: filename UTF-8)
+    const encoder = new TextEncoder();
+    const nameBytes = encoder.encode(finalFilename);
+    const startPacket = new Uint8Array(5 + nameBytes.length);
+    startPacket[0] = 0x01; // CMD_START_TRANSFER
+    const view = new DataView(startPacket.buffer);
+    view.setUint32(1, uint8Array.length, true); // Little-endian
+    startPacket.set(nameBytes, 5);
+
+    await ctrlChar.writeValue(startPacket);
+    await readyPromise;
+
+    // Stream chunks with writeValueWithResponse
+    const chunkSize = 256;
+    let offset = 0;
+    const finishPromise = new Promise((resolve) => {
+      finishResolver = resolve;
+    });
+
+    while (offset < uint8Array.length) {
+      const chunk = uint8Array.slice(offset, offset + chunkSize);
+      if (dataChar.writeValueWithResponse) {
+        await dataChar.writeValueWithResponse(chunk);
+      } else {
+        await dataChar.writeValue(chunk);
+      }
+      offset += chunk.length;
+
+      if (onProgress) {
+        const percent = Math.floor((offset / uint8Array.length) * 100);
+        onProgress(percent, offset, uint8Array.length);
+      }
+    }
+
+    // Finalize transfer: CMD_FINISH_TRANSFER (0x02)
+    const finishPacket = new Uint8Array([0x02]);
+    await ctrlChar.writeValue(finishPacket);
+
+    const result = await finishPromise;
+    if (!result || !result.success) {
+      throw new Error(result ? result.reason : 'E-Reader rejected the transfer');
+    }
+
+    return { success: true, filename: finalFilename, bytes: uint8Array.length };
+  } finally {
+    if (server && server.connected) {
+      try {
+        server.disconnect();
+      } catch (_) {}
+    }
+  }
+}
+

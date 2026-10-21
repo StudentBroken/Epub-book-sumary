@@ -30,12 +30,13 @@ A modern, client-side web application designed to upload EPUB books, store your 
 - **Split Reader & Companion Guide Export**:
   - Side-by-side reading of original EPUB text alongside the AI breakdown.
   - Export the complete companion guide as a clean Markdown file (`.md`).
-- **ESP32-S3 4.2" E-Paper Reader Export (`.ebk`)**:
-  - Directly generates the custom binary container format (`.ebk`) for the **Seeed Studio XIAO ESP32-S3** and 4.2" ESL e-paper reader (SSD1619, 400x300, 1-bit monochrome).
+- **ESP32-S3 4.2" E-Paper Reader Export (`.ebk`) & BLE Studio**:
+  - Directly generates the custom binary container format (`.ebk` v1 bitmaps and v2 reflowable text) for the **Seeed Studio XIAO ESP32-S3** and 4.2" ESL e-paper reader (SSD1619, 400x300, 1-bit monochrome).
   - Paginates original EPUB book text or AI summaries into discrete 400x300 frames with chapter header rules, margins, and page numbers.
-  - Interactive 400x300 e-paper preview modal with page flipping before downloading.
-  - Compatible with onboard LittleFS partition (~6.4MB flash storage).
-  - Supports direct Web Serial streaming to connected XIAO ESP32-S3 hardware via Chrome/Edge.
+  - Interactive 400x300 e-paper preview modal with page flipping before downloading or streaming.
+  - **Wireless Web Bluetooth (BLE) Sync**: One-click wireless sync directly into the e-reader's LittleFS flash storage (`ESP32-Ereader` GATT service `19b10000...`).
+  - **Web Serial USB-C Upload**: Fast fallback streaming via USB Serial modem (115200 baud).
+  - **Built-in E-Reader Studio (`/ble.html`)**: Complete device manager with flash partition storage meter, book library table (read active book, rename, delete), wireless firmware OTA flashing (`firmware.bin`), and real-time terminal diagnostics.
 
 ---
 

@@ -1532,6 +1532,27 @@ button {
   border-color: var(--accent-cyan) !important;
 }
 
+.btn-ble-header {
+  border-color: rgba(129, 140, 248, 0.45) !important;
+  color: #818cf8 !important;
+}
+
+.btn-ble-header:hover {
+  background: rgba(129, 140, 248, 0.12) !important;
+  border-color: #818cf8 !important;
+}
+
+.btn-ble-upload {
+  border-color: rgba(129, 140, 248, 0.4) !important;
+  color: #818cf8 !important;
+}
+
+.btn-ble-upload:hover {
+  background: rgba(129, 140, 248, 0.15) !important;
+  border-color: #818cf8 !important;
+}
+
+
 .ebk-modal-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;

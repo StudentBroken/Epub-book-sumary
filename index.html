@@ -68,6 +68,13 @@
             <span>Export .EBK</span>
           </button>
 
+          <a href="./ble.html" class="btn-ghost btn-ble-header" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Open ESP32-S3 E-Reader Studio (BLE & Serial Manager)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>
+            </svg>
+            <span>BLE Studio</span>
+          </a>
+
           <button id="btn-upload-epub-nav" class="btn-ghost" title="Upload new EPUB">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 5v14M5 12h14"/>
@@ -733,14 +740,23 @@
             </div>
           </div>
 
-          <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-            <div class="footer-left" style="display: flex; align-items: center; gap: 8px;">
+          <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div class="footer-left" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <button id="ebk-btn-ble-stream" class="btn-ghost btn-ble-upload" title="Sync wirelessly to XIAO ESP32-S3 over Bluetooth Low Energy">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>
+                </svg>
+                <span>Sync via BLE</span>
+              </button>
               <button id="ebk-btn-serial-stream" class="btn-ghost" title="Directly stream to connected XIAO ESP32-S3 over Web Serial">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                 </svg>
-                <span>Upload via Web Serial</span>
+                <span>Upload via Serial</span>
               </button>
+              <a href="./ble.html" target="_blank" class="btn-ghost" style="text-decoration: none; font-size: 11px; padding: 5px 9px; opacity: 0.85;" title="Open full device storage & OTA manager">
+                Open Studio ↗
+              </a>
             </div>
             <div class="footer-right" style="display: flex; gap: 10px;">
               <button class="btn-ghost" data-close-modal="modal-export-ebk">Cancel</button>
