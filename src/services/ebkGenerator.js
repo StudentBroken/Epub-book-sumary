@@ -327,27 +327,159 @@ export function buildEbkBinary(title, framePayloads, fontId = 0x0010) {
   return buffer;
 }
 
+export const EBK2_CONFIG = {
+  MAGIC: [0x45, 0x42, 0x4B, 0x32], // 'E', 'B', 'K', '2'
+  HEADER_SIZE: 104,
+  TOC_ENTRY_SIZE: 40,
+  TITLE_MAX_LEN: 64,
+  AUTHOR_MAX_LEN: 32,
+  CHAP_TITLE_MAX_LEN: 32
+};
+
+/**
+ * Builds the compact EBK v2 structured text container.
+ * Stores UTF-8 text with chapter table of contents for on-device reflow and dynamic font sizing.
+ * 
+ * @param {Object} bookData
+ * @param {string} bookData.title Book title (up to 64 bytes UTF-8)
+ * @param {string} bookData.author Author name (up to 32 bytes UTF-8)
+ * @param {Array<{ title: string, text: string }>} bookData.chapters
+ * @returns {Uint8Array} Complete binary .ebk v2 buffer
+ */
+export function buildEbk2Binary({ title = 'Untitled Book', author = 'Unknown', chapters = [] }) {
+  if (!chapters || chapters.length === 0) {
+    throw new Error('Cannot create an EBK v2 container without chapters.');
+  }
+
+  const encoder = new TextEncoder();
+  const totalChapters = chapters.length;
+
+  // 1. Prepare chapter payloads and TOC data
+  const encodedPayloads = [];
+  let totalPayloadSize = 0;
+
+  for (let i = 0; i < totalChapters; i++) {
+    const rawText = chapters[i].text || '';
+    const bytes = encoder.encode(rawText);
+    encodedPayloads.push(bytes);
+    totalPayloadSize += bytes.length;
+  }
+
+  const tocSize = totalChapters * EBK2_CONFIG.TOC_ENTRY_SIZE;
+  const firstPayloadOffset = EBK2_CONFIG.HEADER_SIZE + tocSize;
+  const totalFileSize = firstPayloadOffset + totalPayloadSize;
+
+  const buffer = new Uint8Array(totalFileSize);
+  const view = new DataView(buffer.buffer);
+
+  // 2. Write Header (104 bytes, 0x68)
+  // Magic 'EBK2'
+  buffer[0] = EBK2_CONFIG.MAGIC[0];
+  buffer[1] = EBK2_CONFIG.MAGIC[1];
+  buffer[2] = EBK2_CONFIG.MAGIC[2];
+  buffer[3] = EBK2_CONFIG.MAGIC[3];
+
+  // Version: 0x0002 (little endian)
+  view.setUint16(4, 2, true);
+
+  // Title: 64 bytes (null-padded)
+  const titleBytes = encoder.encode(title.trim().slice(0, 63));
+  for (let i = 0; i < 64; i++) {
+    buffer[6 + i] = i < titleBytes.length ? titleBytes[i] : 0x00;
+  }
+
+  // Author: 32 bytes (null-padded)
+  const authorBytes = encoder.encode(author.trim().slice(0, 31));
+  for (let i = 0; i < 32; i++) {
+    buffer[70 + i] = i < authorBytes.length ? authorBytes[i] : 0x00;
+  }
+
+  // Total Chapters: uint16_t (little endian)
+  view.setUint16(102, totalChapters, true);
+
+  // 3. Write TOC Entries (40 bytes each) and copy Payloads
+  let tocPos = EBK2_CONFIG.HEADER_SIZE;
+  let currentPayloadOffset = firstPayloadOffset;
+
+  for (let i = 0; i < totalChapters; i++) {
+    const chapTitle = (chapters[i].title || `Chapter ${i + 1}`).trim().slice(0, 31);
+    const chapTitleBytes = encoder.encode(chapTitle);
+    const payloadBytes = encodedPayloads[i];
+
+    // Chapter Title (32 bytes)
+    for (let j = 0; j < 32; j++) {
+      buffer[tocPos + j] = j < chapTitleBytes.length ? chapTitleBytes[j] : 0x00;
+    }
+
+    // Offset: uint32_t (little endian)
+    view.setUint32(tocPos + 32, currentPayloadOffset, true);
+
+    // Length: uint32_t (little endian)
+    view.setUint32(tocPos + 36, payloadBytes.length, true);
+
+    // Copy Payload into buffer at currentPayloadOffset
+    buffer.set(payloadBytes, currentPayloadOffset);
+
+    tocPos += EBK2_CONFIG.TOC_ENTRY_SIZE;
+    currentPayloadOffset += payloadBytes.length;
+  }
+
+  return buffer;
+}
+
 /**
  * Validates an .ebk binary buffer against the official ESP32-S3 reader specification.
+ * Supports both v2 Text ('EBK2') and legacy v1 Bitmap ('EBOK').
  */
 export function validateEbkBinary(buffer) {
   if (buffer.length < EBK_CONFIG.HEADER_SIZE) {
     return { valid: false, error: 'File smaller than 40-byte header.' };
   }
 
-  // Check magic 'EBOK'
-  if (
-    buffer[0] !== EBK_CONFIG.MAGIC[0] ||
-    buffer[1] !== EBK_CONFIG.MAGIC[1] ||
-    buffer[2] !== EBK_CONFIG.MAGIC[2] ||
-    buffer[3] !== EBK_CONFIG.MAGIC[3]
-  ) {
-    return { valid: false, error: 'Invalid magic bytes. Expected "EBOK".' };
+  const isV2 = buffer[0] === EBK2_CONFIG.MAGIC[0] &&
+               buffer[1] === EBK2_CONFIG.MAGIC[1] &&
+               buffer[2] === EBK2_CONFIG.MAGIC[2] &&
+               buffer[3] === EBK2_CONFIG.MAGIC[3];
+
+  const isV1 = buffer[0] === EBK_CONFIG.MAGIC[0] &&
+               buffer[1] === EBK_CONFIG.MAGIC[1] &&
+               buffer[2] === EBK_CONFIG.MAGIC[2] &&
+               buffer[3] === EBK_CONFIG.MAGIC[3];
+
+  if (!isV2 && !isV1) {
+    return { valid: false, error: 'Invalid magic bytes. Expected "EBK2" or "EBOK".' };
   }
 
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  const totalFrames = view.getUint16(4, true);
 
+  if (isV2) {
+    if (buffer.length < EBK2_CONFIG.HEADER_SIZE) {
+      return { valid: false, error: 'File smaller than 104-byte v2 header.' };
+    }
+    const version = view.getUint16(4, true);
+    const titleBytes = buffer.slice(6, 70);
+    const titleEnd = titleBytes.indexOf(0x00);
+    const title = new TextDecoder().decode(titleBytes.slice(0, titleEnd !== -1 ? titleEnd : 64));
+
+    const authorBytes = buffer.slice(70, 102);
+    const authorEnd = authorBytes.indexOf(0x00);
+    const author = new TextDecoder().decode(authorBytes.slice(0, authorEnd !== -1 ? authorEnd : 32));
+
+    const totalChapters = view.getUint16(102, true);
+
+    return {
+      valid: true,
+      format: 'v2_text',
+      version,
+      title,
+      author,
+      totalChapters,
+      fileSize: buffer.length
+    };
+  }
+
+  // Legacy v1 Bitmap
+  const totalFrames = view.getUint16(4, true);
   const titleBytes = buffer.slice(6, 38);
   const titleEnd = titleBytes.indexOf(0x00);
   const title = new TextDecoder().decode(titleBytes.slice(0, titleEnd !== -1 ? titleEnd : 32));
@@ -360,6 +492,7 @@ export function validateEbkBinary(buffer) {
 
   return {
     valid: true,
+    format: 'v1_bitmap',
     totalFrames,
     title,
     fontId,

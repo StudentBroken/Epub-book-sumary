@@ -23,9 +23,11 @@ import {
   renderPageToCanvas,
   canvasTo1BitFrameBuffer,
   buildEbkBinary,
+  buildEbk2Binary,
   downloadEbkBlob,
   streamEbkOverSerial,
-  EBK_CONFIG
+  EBK_CONFIG,
+  EBK2_CONFIG
 } from './services/ebkGenerator.js';
 
 // Configure marked for clean, secure rendering
@@ -152,6 +154,7 @@ class App {
     this.setupBtnSaveKey = document.getElementById('setup-btn-save-key');
     // EBK Export Modal elements
     this.modalExportEbk = document.getElementById('modal-export-ebk');
+    this.ebkFormatSelect = document.getElementById('ebk-format-select');
     this.ebkSourceSelect = document.getElementById('ebk-source-select');
     this.ebkFontPreset = document.getElementById('ebk-font-preset');
     this.ebkStatFrames = document.getElementById('ebk-stat-frames');
@@ -210,6 +213,9 @@ class App {
     this.btnExportMarkdown.addEventListener('click', () => this.exportBookAsMarkdown());
     if (this.btnOpenExportEbk) {
       this.btnOpenExportEbk.addEventListener('click', () => this.openExportEbkModal());
+    }
+    if (this.ebkFormatSelect) {
+      this.ebkFormatSelect.addEventListener('change', () => this.updateEbkPaginationAndPreview());
     }
     if (this.ebkSourceSelect) {
       this.ebkSourceSelect.addEventListener('change', () => this.updateEbkPaginationAndPreview());
@@ -1006,11 +1012,9 @@ class App {
     this.updateEbkPaginationAndPreview();
   }
 
-  updateEbkPaginationAndPreview() {
-    if (!this.currentBook) return;
-
-    const source = this.ebkSourceSelect.value; // 'book' | 'summaries' | 'current'
-    const preset = this.ebkFontPreset.value;   // 'standard' | 'compact' | 'large'
+  getEbkSections() {
+    if (!this.currentBook) return [];
+    const source = this.ebkSourceSelect ? this.ebkSourceSelect.value : 'book';
     const sections = [];
 
     if (source === 'book') {
@@ -1018,16 +1022,16 @@ class App {
       if (this.currentBook.rawChapters && this.currentBook.rawChapters.length > 0) {
         this.currentBook.rawChapters.forEach(ch => {
           sections.push({
-            title: ch.title,
-            text: ch.text,
+            title: ch.title || `Chapter ${ch.index + 1}`,
+            text: ch.text || '',
             chapterIndex: ch.index
           });
         });
       } else if (this.currentBook.chunks) {
-        this.currentBook.chunks.forEach(ch => {
+        this.currentBook.chunks.forEach((ch, idx) => {
           sections.push({
-            title: ch.title,
-            text: ch.text
+            title: ch.title || `Section ${idx + 1}`,
+            text: ch.text || ''
           });
         });
       }
@@ -1035,16 +1039,15 @@ class App {
       // AI Chapter summaries
       const chunksWithSummary = (this.currentBook.chunks || []).filter(c => c.summary);
       if (chunksWithSummary.length === 0) {
-        this.showToast('No AI summaries generated yet. Generating EBK with placeholder text.', 'default');
         sections.push({
-          title: this.currentBook.title,
+          title: this.currentBook.title || 'Summary',
           text: `No summaries have been generated yet for "${this.currentBook.title}". Run the AI generator first to export full summaries.`
         });
       } else {
-        chunksWithSummary.forEach(c => {
+        chunksWithSummary.forEach((c, idx) => {
           sections.push({
-            title: c.title,
-            text: c.summary
+            title: c.title || `Summary ${idx + 1}`,
+            text: c.summary || ''
           });
         });
       }
@@ -1053,16 +1056,34 @@ class App {
       const chunk = this.currentBook.chunks?.[this.activeChunkIndex];
       if (chunk) {
         sections.push({
-          title: chunk.title,
-          text: chunk.summary || chunk.text
+          title: chunk.title || `Section ${this.activeChunkIndex + 1}`,
+          text: chunk.summary || chunk.text || ''
         });
       }
     }
 
+    if (sections.length === 0) {
+      sections.push({
+        title: this.currentBook.title || 'Empty Section',
+        text: 'No text available in this selection.'
+      });
+    }
+
+    return sections;
+  }
+
+  updateEbkPaginationAndPreview() {
+    if (!this.currentBook) return;
+
+    const format = this.ebkFormatSelect ? this.ebkFormatSelect.value : 'v2';
+    const preset = this.ebkFontPreset ? this.ebkFontPreset.value : 'standard';
+    const sections = this.getEbkSections();
+
+    // Prepare preview pages for visual inspection on the 400x300 canvas
     this.ebkPages = paginateSectionsForEpaper(sections, { preset });
     if (this.ebkPages.length === 0) {
       this.ebkPages.push({
-        sectionTitle: this.currentBook.title,
+        sectionTitle: this.currentBook.title || 'Untitled',
         sectionPageNum: 1,
         lines: ['[No text available in this selection]'],
         fontSize: 15,
@@ -1075,27 +1096,48 @@ class App {
       this.ebkCurrentPreviewIndex = 0;
     }
 
-    // Update Stats
-    const totalFrames = this.ebkPages.length;
-    // EBK size: 40 byte header + totalFrames*4 index + totalFrames*(4 + 15000) frame blocks
-    const totalSizeBytes = 40 + (totalFrames * 4) + (totalFrames * 15004);
-    const sizeKb = (totalSizeBytes / 1024).toFixed(1);
-    const sizeMb = (totalSizeBytes / (1024 * 1024)).toFixed(2);
-    const displaySize = totalSizeBytes > 1024 * 1024 ? `${sizeMb} MB` : `${sizeKb} KB`;
+    const partitionMaxBytes = 6.4 * 1024 * 1024; // LittleFS partition size (~6.4 MB)
 
-    this.ebkStatFrames.textContent = `${totalFrames} frame${totalFrames === 1 ? '' : 's'}`;
-    this.ebkStatSize.textContent = displaySize;
+    if (format === 'v2') {
+      // EBK2: 104-byte header + (chapters * 40-byte TOC) + UTF-8 text payloads
+      const encoder = new TextEncoder();
+      let totalPayloadBytes = 0;
+      sections.forEach(s => {
+        totalPayloadBytes += encoder.encode(s.text || '').length;
+      });
+      const totalSizeBytes = 104 + (sections.length * 40) + totalPayloadBytes;
+      const sizeKb = (totalSizeBytes / 1024).toFixed(1);
+      const sizeMb = (totalSizeBytes / (1024 * 1024)).toFixed(2);
+      const displaySize = totalSizeBytes > 1024 * 1024 ? `${sizeMb} MB` : `${sizeKb} KB`;
 
-    // LittleFS partition fit (~6.4 MB)
-    const partitionMaxBytes = 6.4 * 1024 * 1024;
-    const usedPct = ((totalSizeBytes / partitionMaxBytes) * 100).toFixed(1);
-    if (totalSizeBytes <= partitionMaxBytes) {
-      this.ebkStatFit.textContent = `✓ Fits (${usedPct}% of 6.4MB LittleFS)`;
+      this.ebkStatFrames.textContent = `${sections.length} chapter${sections.length === 1 ? '' : 's'} (reflow on ESP32)`;
+      this.ebkStatSize.textContent = displaySize;
+
+      const usedPct = ((totalSizeBytes / partitionMaxBytes) * 100).toFixed(1);
+      this.ebkStatFit.textContent = `✓ Fits (${usedPct}% of 6.4MB LittleFS — fits 15+ books)`;
       this.ebkStatFit.className = 'ebk-stat-value ebk-stat-green';
+      this.ebkStatFit.style.color = '';
     } else {
-      this.ebkStatFit.textContent = `⚠ Exceeds LittleFS (${usedPct}%)`;
-      this.ebkStatFit.className = 'ebk-stat-value';
-      this.ebkStatFit.style.color = '#ef4444';
+      // Legacy v1 Bitmap: 40-byte header + index table + 15,004 bytes per frame
+      const totalFrames = this.ebkPages.length;
+      const totalSizeBytes = 40 + (totalFrames * 4) + (totalFrames * 15004);
+      const sizeKb = (totalSizeBytes / 1024).toFixed(1);
+      const sizeMb = (totalSizeBytes / (1024 * 1024)).toFixed(2);
+      const displaySize = totalSizeBytes > 1024 * 1024 ? `${sizeMb} MB` : `${sizeKb} KB`;
+
+      this.ebkStatFrames.textContent = `${totalFrames} frame${totalFrames === 1 ? '' : 's'} (pre-baked)`;
+      this.ebkStatSize.textContent = displaySize;
+
+      const usedPct = ((totalSizeBytes / partitionMaxBytes) * 100).toFixed(1);
+      if (totalSizeBytes <= partitionMaxBytes) {
+        this.ebkStatFit.textContent = `✓ Fits (${usedPct}% of 6.4MB LittleFS)`;
+        this.ebkStatFit.className = 'ebk-stat-value ebk-stat-green';
+        this.ebkStatFit.style.color = '';
+      } else {
+        this.ebkStatFit.textContent = `⚠ Exceeds LittleFS (${usedPct}%)`;
+        this.ebkStatFit.className = 'ebk-stat-value';
+        this.ebkStatFit.style.color = '#ef4444';
+      }
     }
 
     this.renderEbkPreview();
@@ -1135,51 +1177,77 @@ class App {
   }
 
   async generateAndDownloadEbk() {
-    if (!this.currentBook || !this.ebkPages || this.ebkPages.length === 0) return;
+    if (!this.currentBook) return;
     if (this.ebkIsGenerating) return;
+
+    const format = this.ebkFormatSelect ? this.ebkFormatSelect.value : 'v2';
+    const sections = this.getEbkSections();
+    if (!sections || sections.length === 0) return;
 
     this.ebkIsGenerating = true;
     this.ebkBtnDownload.disabled = true;
     this.ebkProgressBox.style.display = 'flex';
     this.ebkProgressFill.style.width = '0%';
     this.ebkProgressPct.textContent = '0%';
-    this.ebkProgressStatus.textContent = 'Rendering 1-bit frames...';
-
-    const scratchCanvas = document.createElement('canvas');
-    scratchCanvas.width = 400;
-    scratchCanvas.height = 300;
-    const frameBuffers = [];
-    const totalFrames = this.ebkPages.length;
 
     try {
-      for (let i = 0; i < totalFrames; i++) {
-        const page = this.ebkPages[i];
-        renderPageToCanvas(page, i, totalFrames, this.currentBook.title, scratchCanvas);
-        const frameBuffer = canvasTo1BitFrameBuffer(scratchCanvas);
-        frameBuffers.push(frameBuffer);
+      let ebkBinary = null;
 
-        const pct = Math.floor(((i + 1) / totalFrames) * 100);
-        this.ebkProgressFill.style.width = `${pct}%`;
-        this.ebkProgressPct.textContent = `${pct}%`;
-        this.ebkProgressStatus.textContent = `Frame ${i + 1} of ${totalFrames}...`;
+      if (format === 'v2') {
+        this.ebkProgressStatus.textContent = 'Packing structured text container (EBK2)...';
+        this.ebkProgressFill.style.width = '50%';
+        this.ebkProgressPct.textContent = '50%';
+        await new Promise(r => setTimeout(r, 30));
 
-        // Yield execution periodically to keep UI responsive
-        if (i % 5 === 0) {
-          await new Promise(r => setTimeout(r, 0));
+        ebkBinary = buildEbk2Binary({
+          title: this.currentBook.title || 'Untitled Book',
+          author: this.currentBook.author || 'Unknown',
+          chapters: sections
+        });
+
+        this.ebkProgressFill.style.width = '100%';
+        this.ebkProgressPct.textContent = '100%';
+        this.ebkProgressStatus.textContent = 'Packaging complete!';
+        await new Promise(r => setTimeout(r, 20));
+      } else {
+        // v1 Bitmap frame generation
+        this.ebkProgressStatus.textContent = 'Rendering 1-bit frames...';
+
+        const scratchCanvas = document.createElement('canvas');
+        scratchCanvas.width = 400;
+        scratchCanvas.height = 300;
+        const frameBuffers = [];
+        const totalFrames = this.ebkPages.length;
+
+        for (let i = 0; i < totalFrames; i++) {
+          const page = this.ebkPages[i];
+          renderPageToCanvas(page, i, totalFrames, this.currentBook.title, scratchCanvas);
+          const frameBuffer = canvasTo1BitFrameBuffer(scratchCanvas);
+          frameBuffers.push(frameBuffer);
+
+          const pct = Math.floor(((i + 1) / totalFrames) * 100);
+          this.ebkProgressFill.style.width = `${pct}%`;
+          this.ebkProgressPct.textContent = `${pct}%`;
+          this.ebkProgressStatus.textContent = `Frame ${i + 1} of ${totalFrames}...`;
+
+          if (i % 5 === 0) {
+            await new Promise(r => setTimeout(r, 0));
+          }
         }
+
+        this.ebkProgressStatus.textContent = 'Packing binary container (.ebk)...';
+        await new Promise(r => setTimeout(r, 20));
+
+        const fontPreset = this.ebkFontPreset ? this.ebkFontPreset.value : 'standard';
+        const fontId = EBK_CONFIG.FONT_PRESETS[fontPreset]?.fontId || 0x0010;
+        ebkBinary = buildEbkBinary(this.currentBook.title, frameBuffers, fontId);
       }
 
-      this.ebkProgressStatus.textContent = 'Packing binary container (.ebk)...';
-      await new Promise(r => setTimeout(r, 20));
-
-      const fontPreset = this.ebkFontPreset.value;
-      const fontId = EBK_CONFIG.FONT_PRESETS[fontPreset]?.fontId || 0x0010;
-      const ebkBinary = buildEbkBinary(this.currentBook.title, frameBuffers, fontId);
-
-      const filename = `${this.currentBook.title.replace(/[^a-z0-9]/gi, '_')}.ebk`;
+      const filename = `${(this.currentBook.title || 'book').replace(/[^a-z0-9]/gi, '_')}.ebk`;
       downloadEbkBlob(ebkBinary, filename);
 
-      this.showToast(`Exported "${filename}" (${(ebkBinary.length / 1024).toFixed(1)} KB) successfully!`, 'success');
+      const formatLabel = format === 'v2' ? 'v2 Structured Text' : 'v1 Bitmap';
+      this.showToast(`Exported "${filename}" (${formatLabel}, ${(ebkBinary.length / 1024).toFixed(1)} KB) successfully!`, 'success');
       this.modalExportEbk.style.display = 'none';
     } catch (err) {
       console.error('[EBK Export Error]', err);
@@ -1196,8 +1264,12 @@ class App {
       alert('Web Serial is only supported in Chrome, Edge, and Opera browsers over HTTPS or localhost.');
       return;
     }
-    if (!this.currentBook || !this.ebkPages || this.ebkPages.length === 0) return;
+    if (!this.currentBook) return;
     if (this.ebkIsGenerating) return;
+
+    const format = this.ebkFormatSelect ? this.ebkFormatSelect.value : 'v2';
+    const sections = this.getEbkSections();
+    if (!sections || sections.length === 0) return;
 
     let port = null;
     try {
@@ -1207,25 +1279,35 @@ class App {
       this.ebkIsGenerating = true;
       this.ebkBtnSerialStream.disabled = true;
       this.ebkProgressBox.style.display = 'flex';
-      this.ebkProgressStatus.textContent = 'Rendering & packing .ebk...';
+      this.ebkProgressStatus.textContent = 'Preparing binary container...';
       this.ebkProgressFill.style.width = '10%';
       this.ebkProgressPct.textContent = '10%';
 
-      const scratchCanvas = document.createElement('canvas');
-      scratchCanvas.width = 400;
-      scratchCanvas.height = 300;
-      const frameBuffers = [];
-      const totalFrames = this.ebkPages.length;
+      let ebkBinary = null;
 
-      for (let i = 0; i < totalFrames; i++) {
-        renderPageToCanvas(this.ebkPages[i], i, totalFrames, this.currentBook.title, scratchCanvas);
-        frameBuffers.push(canvasTo1BitFrameBuffer(scratchCanvas));
-        if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+      if (format === 'v2') {
+        ebkBinary = buildEbk2Binary({
+          title: this.currentBook.title || 'Untitled Book',
+          author: this.currentBook.author || 'Unknown',
+          chapters: sections
+        });
+      } else {
+        const scratchCanvas = document.createElement('canvas');
+        scratchCanvas.width = 400;
+        scratchCanvas.height = 300;
+        const frameBuffers = [];
+        const totalFrames = this.ebkPages.length;
+
+        for (let i = 0; i < totalFrames; i++) {
+          renderPageToCanvas(this.ebkPages[i], i, totalFrames, this.currentBook.title, scratchCanvas);
+          frameBuffers.push(canvasTo1BitFrameBuffer(scratchCanvas));
+          if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+        }
+
+        const fontPreset = this.ebkFontPreset ? this.ebkFontPreset.value : 'standard';
+        const fontId = EBK_CONFIG.FONT_PRESETS[fontPreset]?.fontId || 0x0010;
+        ebkBinary = buildEbkBinary(this.currentBook.title, frameBuffers, fontId);
       }
-
-      const fontPreset = this.ebkFontPreset.value;
-      const fontId = EBK_CONFIG.FONT_PRESETS[fontPreset]?.fontId || 0x0010;
-      const ebkBinary = buildEbkBinary(this.currentBook.title, frameBuffers, fontId);
 
       this.ebkProgressStatus.textContent = 'Streaming to XIAO ESP32-S3 LittleFS...';
       await streamEbkOverSerial(port, ebkBinary, (pct, sent, total) => {

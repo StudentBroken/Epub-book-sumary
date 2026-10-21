@@ -660,6 +660,15 @@
             <!-- Left Controls Column -->
             <div class="ebk-config-col">
               <div class="setting-field">
+                <label class="setting-label" for="ebk-format-select">Container Format</label>
+                <select id="ebk-format-select" class="form-select">
+                  <option value="v2" selected>v2 Structured Text (~500 KB — Dynamic layout & reflow)</option>
+                  <option value="v1">v1 Pre-baked Bitmaps (~8.7 MB — Fixed 400×300 frames)</option>
+                </select>
+                <div class="setting-hint">v2 stores compact UTF-8 text for on-device reflow, rotation, and multi-book storage.</div>
+              </div>
+
+              <div class="setting-field">
                 <label class="setting-label" for="ebk-source-select">Source Content</label>
                 <select id="ebk-source-select" class="form-select">
                   <option value="book" selected>Full Book Text (Original EPUB)</option>
