@@ -157,6 +157,7 @@ const SPEC = [
   { id: 'strength', label: 'Strength', type: 'range', min: 0, max: 100, step: 1, def: 90 },
   { id: 'serpentine', label: 'Serpentine scan', type: 'check', def: true },
   { id: 'linear', label: 'Linear-light maths', type: 'check', def: true },
+  { id: 'smart', label: 'Smart colour mix (red used everywhere)', type: 'check', def: true },
   { h: 'Panel colours (what the paper really looks like)' },
   { id: 'cWhite', label: 'White', type: 'color', def: '#d9d9d0' },
   { id: 'cBlack', label: 'Black', type: 'color', def: '#1c1c1c' },
@@ -293,6 +294,44 @@ function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 1
 
 function palette() { return [hex(S.cWhite), hex(S.cBlack), hex(S.cRed)]; }
 
+// Smart colour mix: W/B/R only spans a triangle of colours, so most picture colours are out of
+// gamut. Instead of letting the dither chase impossible colours (noise), map every pixel to the
+// closest reachable mix that keeps its brightness: grey plus as much red as its hue justifies.
+// Warm hues (orange, skin, brown, magenta) get a red share, cool hues (blue, green, cyan) get none
+// and so render as neutral grey that looks cool next to the red-tinted areas.
+function gamutMap(buf, P, lin, n) {
+  const yc = [0.2126, 0.7152, 0.0722], wt = [0.35, 0.45, 0.2];
+  const Y = c => yc[0]*c[0] + yc[1]*c[1] + yc[2]*c[2];
+  const W_ = P[0], B_ = P[1], R_ = P[2], yw = Y(W_), yb = Y(B_), yr = Y(R_);
+  const gain = S.redBias / 100, thr = S.redSat / 100;
+  for (let i = 0; i < n; i++) {
+    const t = [buf[i*3], buf[i*3+1], buf[i*3+2]];
+    const y = Math.min(yw, Math.max(yb, Y(t)));
+    // red share r: white share is (y - r*yr - (1-r)*yb) / (yw - yb), must stay within [0, 1-r]
+    const k = (yw - yb) || 1;
+    // wW(r) = a + b*r ; a = (y - yb)/k ; b = (yb - yr)/k
+    const a = (y - yb) / k, bq = (yb - yr) / k;
+    let lo = 0, hi = 1;
+    if (bq > 0) { hi = Math.min(hi, (1 - a) / (bq + 1)); lo = Math.max(lo, -a / bq); }
+    else if (bq < 0) { hi = Math.min(hi, (1 - a) / (bq + 1), -a / bq); }
+    else if (a < 0 || a > 1) { hi = 0; }
+    if (hi < lo) hi = lo;
+    // mix colour m(r) = m0 + r*d
+    const m0 = [0, 1, 2].map(c => a * W_[c] + (1 - a) * B_[c]);
+    const d = [0, 1, 2].map(c => bq * W_[c] + (-bq - 1) * B_[c] + R_[c]);
+    let num = 0, den = 0;
+    for (let c = 0; c < 3; c++) { num += wt[c] * (t[c] - m0[c]) * d[c]; den += wt[c] * d[c] * d[c]; }
+    let r = den > 0 ? num / den : 0;
+    r = Math.max(lo, Math.min(hi, r));
+    // user control: scale red and drop it for near-grey pixels
+    const mxc = Math.max(t[0], t[1], t[2]), mnc = Math.min(t[0], t[1], t[2]);
+    const sat = mxc > 0 ? (mxc - mnc) / mxc : 0;
+    r *= sat < thr ? 0 : gain;
+    r = Math.max(lo, Math.min(hi, r));
+    for (let c = 0; c < 3; c++) buf[i*3+c] = m0[c] + r * d[c];
+  }
+}
+
 // returns Uint8Array of palette codes: 0 white, 1 black, 2 red
 function quantise(rgb) {
   const n = W * H, pal = palette(), lin = S.linear;
@@ -301,6 +340,7 @@ function quantise(rgb) {
   const buf = new Float32Array(n * 3);
   for (let i = 0; i < n * 3; i++) buf[i] = lin ? toLin(rgb[i]) : rgb[i];
   const P = pal.map(c => c.map(v => lin ? toLin(v) : v));
+  if (S.smart) gamutMap(buf, P, lin, n);
   const scale = lin ? 1 : 255, wt = [0.35, 0.45, 0.2];
   const redGain = Math.pow(S.redBias / 100, 2);
   const out = new Uint8Array(n);
@@ -315,10 +355,10 @@ function quantise(rgb) {
       if (algo === 'bayer') { const t = (BAYER8[y & 7][x & 7] / 64 - 0.5) * spread; r += t; g += t; b += t; }
       let best = 0, bd = 1e12;
       for (let p = 0; p < 3; p++) {
-        if (p === 2 && sat[i] < S.redSat) continue;
+        if (!S.smart && p === 2 && sat[i] < S.redSat) continue;
         const dr = (r - P[p][0]) / scale, dg = (g - P[p][1]) / scale, db = (b - P[p][2]) / scale;
         let d = wt[0]*dr*dr + wt[1]*dg*dg + wt[2]*db*db;
-        if (p === 2) d /= redGain;
+        if (p === 2 && !S.smart) d /= redGain;
         if (d < bd) { bd = d; best = p; }
       }
       out[i] = best;
