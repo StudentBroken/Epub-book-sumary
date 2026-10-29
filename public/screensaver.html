@@ -5,108 +5,356 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>E-Reader Screensaver Converter</title>
   <style>
-    :root { --bg:#0f1420; --card:#171e2e; --text:#e6eaf2; --muted:#8a94a8; --accent:#38bdf8; --border:#2a3550; }
-    @media (prefers-color-scheme: light) { :root { --bg:#f4f6fa; --card:#fff; --text:#18202e; --muted:#5b6578; --accent:#0369a1; --border:#d5dbe7; } }
+    :root { --bg:#0f1420; --card:#171e2e; --text:#e6eaf2; --muted:#8a94a8; --accent:#38bdf8; --border:#2a3550; --ok:#34d399; }
+    @media (prefers-color-scheme: light) { :root { --bg:#f4f6fa; --card:#fff; --text:#18202e; --muted:#5b6578; --accent:#0369a1; --border:#d5dbe7; --ok:#047857; } }
     * { box-sizing: border-box; }
     body { margin:0; padding:1.5rem 1rem 3rem; background:var(--bg); color:var(--text); font:15px/1.5 system-ui, sans-serif; }
-    main { max-width: 980px; margin: 0 auto; }
+    main { max-width: 1060px; margin: 0 auto; }
+    a { color: var(--accent); }
     .card { background:var(--card); border:1px solid var(--border); border-radius:.75rem; padding:1.1rem 1.25rem; margin-bottom:1rem; }
-    h1 { font-size:1.35rem; margin:0 0 .3rem; } h2 { font-size:1.05rem; margin:0 0 .6rem; }
+    h1 { font-size:1.35rem; margin:0 0 .3rem; } h2 { font-size:1.05rem; margin:0 0 .6rem; } h3 { font-size:.85rem; margin:1rem 0 .3rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
     p, li { color:var(--muted); font-size:.9rem; } code { background:rgba(127,127,127,.18); padding:.05rem .3rem; border-radius:.25rem; }
-    .row { display:flex; gap:.9rem; flex-wrap:wrap; align-items:center; margin:.5rem 0; }
-    select, input[type=number] { padding:.4rem; border-radius:.4rem; border:1px solid var(--border); background:transparent; color:inherit; }
-    button { padding:.55rem 1rem; border-radius:.45rem; border:0; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
+    .row { display:flex; gap:.8rem; flex-wrap:wrap; align-items:center; margin:.5rem 0; }
+    select, input[type=number], input[type=text] { padding:.4rem .5rem; border-radius:.4rem; border:1px solid var(--border); background:transparent; color:inherit; font:inherit; }
+    input[type=color] { width:2.2rem; height:1.9rem; padding:0; border:1px solid var(--border); border-radius:.3rem; background:transparent; }
+    button { padding:.5rem .95rem; border-radius:.45rem; border:0; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; font:inherit; font-weight:600; }
+    button.ghost { background:transparent; color:var(--accent); border:1px solid var(--border); }
     button:disabled { opacity:.45; cursor:not-allowed; }
-    #drop { border:2px dashed var(--border); border-radius:.6rem; padding:1.6rem; text-align:center; cursor:pointer; color:var(--muted); }
-    #grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:.7rem; margin-top:.8rem; }
-    .thumb { text-align:center; font-size:.75rem; color:var(--muted); }
-    .thumb canvas { width:100%; height:auto; border:1px solid var(--border); background:#fff; image-rendering:pixelated; }
-    #status { font-family: ui-monospace, monospace; font-size:.8rem; color:var(--muted); }
+    #drop { border:2px dashed var(--border); border-radius:.6rem; padding:1.4rem; text-align:center; cursor:pointer; color:var(--muted); }
+    #drop.hot { border-color: var(--accent); }
+    #grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px,1fr)); gap:.6rem; margin-top:.8rem; max-height:380px; overflow:auto; }
+    .thumb { text-align:center; font-size:.7rem; color:var(--muted); cursor:pointer; border:2px solid transparent; border-radius:.35rem; padding:2px; word-break:break-all; }
+    .thumb.sel { border-color: var(--accent); } .thumb.skip { opacity:.35; }
+    .thumb canvas { width:100%; height:auto; border:1px solid var(--border); background:#fff; image-rendering:pixelated; display:block; }
+    #status { font-family: ui-monospace, monospace; font-size:.8rem; color:var(--muted); min-height:1.2em; }
+    .tune { display:grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1.1fr); gap:1.2rem; }
+    @media (max-width: 800px) { .tune { grid-template-columns: 1fr; } }
+    .ctl { display:grid; grid-template-columns: 8.5rem 1fr 3.2rem; gap:.5rem; align-items:center; font-size:.85rem; margin:.15rem 0; }
+    .ctl.two { grid-template-columns: 8.5rem 1fr; }
+    .ctl output { text-align:right; font-family: ui-monospace, monospace; color:var(--muted); font-size:.78rem; }
+    .ctl input[type=range] { width:100%; }
+    .previews { display:flex; gap:.7rem; flex-wrap:wrap; position:sticky; top:.5rem; align-self:start; }
+    .previews figure { margin:0; text-align:center; font-size:.75rem; color:var(--muted); }
+    .previews canvas { width:240px; height:320px; border:1px solid var(--border); background:#fff; image-rendering:pixelated; }
+    textarea { width:100%; min-height:300px; padding:.7rem; border-radius:.5rem; border:1px solid var(--border); background:rgba(127,127,127,.08); color:inherit; font:12px/1.45 ui-monospace, monospace; resize:vertical; white-space:pre; }
+    .ok { color: var(--ok); }
   </style>
 </head>
 <body>
 <main>
   <div class="card">
-    <p style="margin:0 0 .4rem"><a href="./index.html" style="color:var(--accent)">&larr; LuminaEPUB</a> &middot; <a href="./ble.html" style="color:var(--accent)">E-Reader Studio (WiFi setup)</a></p>
+    <p style="margin:0 0 .4rem"><a href="./index.html">&larr; LuminaEPUB</a> &middot; <a href="./ble.html">E-Reader Studio (WiFi setup)</a></p>
     <h1>Screensaver Converter</h1>
     <p>Turns pictures into the e-reader's <b>SSI v1</b> format (300&times;400 portrait, 2 bits per pixel: white / black / red),
-      splits them into CRC-protected chunks with a parity chunk, and exports a CSV to import into your Google Sheet.</p>
+      splits each into CRC-protected chunks with a parity chunk, and exports a CSV for your Google Sheet. Your tuning is remembered in this browser.</p>
   </div>
 
   <div class="card">
-    <h2>1. Pick pictures (download them from Drive first)</h2>
-    <div id="drop">Drop images here or click to choose (about 100 is fine)</div>
+    <h2>1. Pictures</h2>
+    <div id="drop">Drop images here or click to choose (about 30&ndash;100 is plenty)</div>
     <input id="files" type="file" accept="image/*" multiple hidden>
     <div class="row">
-      <label>Fit
-        <select id="fit"><option value="cover">Fill (crop edges)</option><option value="contain">Whole picture (white bars)</option></select>
-      </label>
-      <label>Dither
-        <select id="dither"><option value="fs">Floyd&ndash;Steinberg</option><option value="none">None (flat colours)</option></select>
-      </label>
-      <label>Red strength
-        <select id="red"><option value="0.85">Low</option><option value="1" selected>Normal</option><option value="1.25">High</option></select>
+      <label>Which pictures
+        <select id="orient">
+          <option value="all">All (landscape ones cropped/fitted)</option>
+          <option value="rotate">All (landscape rotated 90&deg; to fill)</option>
+          <option value="vertical">Vertical pictures only (skip landscape)</option>
+          <option value="landscape">Landscape pictures only (rotated 90&deg; to fill)</option>
+        </select>
       </label>
       <label>First image ID <input id="startid" type="number" value="1" min="1" style="width:5.5rem"></label>
-      <button id="go" disabled>Convert</button>
-      <button id="dl" disabled>Download sheet CSV</button>
     </div>
     <div id="status"></div>
     <div id="grid"></div>
   </div>
 
   <div class="card">
-    <h2>2. Put it in Google Sheets</h2>
+    <h2>2. Tune the colours <span style="font-weight:400;color:var(--muted);font-size:.8rem">(click a thumbnail above to preview it here)</span></h2>
+    <div class="row">
+      <label>Preset
+        <select id="preset">
+          <option value="">&mdash; choose &mdash;</option>
+          <option value="photo">Photo (realistic)</option>
+          <option value="graphic">Graphic / high contrast</option>
+          <option value="soft">Soft, little red</option>
+          <option value="warm">Warm, more red</option>
+        </select>
+      </label>
+      <button class="ghost" id="reset">Reset to defaults</button>
+      <span id="saved" class="ok" style="font-size:.8rem"></span>
+    </div>
+    <div class="tune">
+      <div id="controls"></div>
+      <div class="previews">
+        <figure><canvas id="pvSrc" width="300" height="400"></canvas><figcaption>Adjusted picture</figcaption></figure>
+        <figure><canvas id="pvOut" width="300" height="400"></canvas><figcaption>Panel simulation (W / B / R)</figcaption></figure>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Convert &amp; export</h2>
+    <div class="row">
+      <button id="go" disabled>Convert all</button>
+      <button id="dl" disabled>Download sheet CSV</button>
+    </div>
+    <p>Import the CSV once into a tab named <code id="sheetNameHint">Images</code> (<b>File &rarr; Import &rarr; Upload &rarr; Replace current sheet</b>). The sheet never needs updating again:
+      the device picks random images from it every week, preferring ones it does not already have, so even 30 pictures rotate forever.</p>
+  </div>
+
+  <div class="card">
+    <h2>4. Google Apps Script (copy &amp; paste)</h2>
+    <div class="row">
+      <label>Secret key <input id="secret" type="text" style="width:16rem"></label>
+      <button class="ghost" id="genSecret">Generate new</button>
+      <label>Sheet tab name <input id="sheetName" type="text" value="Images" style="width:8rem"></label>
+    </div>
+    <textarea id="script" readonly spellcheck="false"></textarea>
+    <div class="row">
+      <button id="copyScript">Copy script</button>
+      <span id="copied" class="ok" style="font-size:.85rem"></span>
+    </div>
     <ol>
-      <li>Create a Sheet with a tab named <code>Images</code>. <b>File &rarr; Import &rarr; Upload</b> the CSV, choose <i>Replace current sheet</i> (the header row stays in row 1).</li>
-      <li>Columns: <code>image_id, chunk_idx, crc32 (decimal), data (base64)</code>. One image = 13 rows (header, 10 data chunks, parity, header copy).</li>
-      <li>Open <b>Extensions &rarr; Apps Script</b>, paste <code>tools/screensaver/apps_script.gs</code> from the firmware repo, set <code>SECRET</code>, and <b>Deploy &rarr; Web app</b> (execute as you, access: anyone).</li>
-      <li>In the <a href="./ble.html" style="color:var(--accent)">E-Reader Studio</a>, enter your WiFi and the web app URL followed by <code>?k=YOUR_SECRET</code>.</li>
+      <li>Create the Google Sheet and import the CSV (step 3). Open <b>Extensions &rarr; Apps Script</b>, delete the sample code and paste the script above.</li>
+      <li><b>Deploy &rarr; New deployment &rarr; Web app</b>: Execute as <i>Me</i>, access <i>Anyone</i>. Authorise when asked, copy the <code>/exec</code> URL.</li>
+      <li>Paste that URL below to get the string for the E-Reader Studio (<a href="./ble.html">ble.html</a> &rarr; WiFi &amp; Colour Screensaver card).</li>
     </ol>
+    <div class="row">
+      <label>Web app URL <input id="execUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" style="width:min(32rem, 80vw)"></label>
+    </div>
+    <div class="row">
+      <input id="finalUrl" type="text" readonly style="width:min(40rem, 90vw)">
+      <button class="ghost" id="copyUrl">Copy</button>
+    </div>
   </div>
 </main>
 
 <script>
+const GS_TEMPLATE = /*__GS__*/"/**\n * E-reader colour screensaver backend (Google Apps Script web app).\n *\n * Sheet tab \"__SHEET__\", row 1 = header, then one row per chunk:\n *   A image_id | B chunk_idx | C crc32 (decimal) | D base64 data\n * Generate the CSV with the Screensaver Converter page and import it once; you never have to\n * update it again. The device asks for N random images every week and prefers ones it does not\n * already hold, so a sheet with as few as ~20 images keeps rotating forever.\n *\n * Deploy: Deploy > New deployment > Web app > Execute as: Me, Who has access: Anyone.\n * Device calls (k must equal SECRET):\n *   ?a=list&n=14&have=3,8&k=SECRET   -> \"SS1\\nL 5,9,12,...\\nEND\"   (n random ids, unseen first)\n *   ?a=img&id=5&k=SECRET             -> \"SS1\\nC 5 0 <crc hex> <base64>\\n...\\nEND\"\n *   ?a=img&id=5&c=3,7&k=SECRET       -> only the listed chunk indexes (used for repairs)\n */\nconst SECRET = '__SECRET__';\nconst SHEET_NAME = '__SHEET__';\n\nfunction doGet(e) {\n  const p = e.parameter || {};\n  if (p.k !== SECRET) return text_('ERR forbidden');\n  if (p.a === 'list') return text_(list_(parseInt(p.n, 10) || 14, p.have));\n  if (p.a === 'img') return text_(image_(parseInt(p.id, 10), p.c));\n  return text_('ERR bad request');\n}\n\nfunction text_(s) {\n  return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.TEXT);\n}\n\n// Image ids are cached for 10 min so repeated device calls do not rescan the sheet.\nfunction ids_() {\n  const cache = CacheService.getScriptCache();\n  const hit = cache.get('ids');\n  if (hit) return JSON.parse(hit);\n  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);\n  const last = sh.getLastRow();\n  const col = last > 1 ? sh.getRange(2, 1, last - 1, 1).getValues() : [];\n  const seen = {};\n  col.forEach(function (r) { if (r[0] !== '') seen[r[0]] = true; });\n  const ids = Object.keys(seen).map(Number);\n  cache.put('ids', JSON.stringify(ids), 600);\n  return ids;\n}\n\nfunction shuffle_(a) {\n  for (let i = a.length - 1; i > 0; i--) {\n    const j = Math.floor(Math.random() * (i + 1));\n    const t = a[i]; a[i] = a[j]; a[j] = t;\n  }\n  return a;\n}\n\n// Random picks, images the device does not hold yet come first. With 30 images and n=14 every\n// sync brings new pictures; with fewer than n images you simply get all of them.\nfunction list_(n, haveCsv) {\n  const have = {};\n  (haveCsv ? String(haveCsv).split(',') : []).forEach(function (x) { have[Number(x)] = true; });\n  const ids = ids_();\n  const fresh = shuffle_(ids.filter(function (id) { return !have[id]; }));\n  const old = shuffle_(ids.filter(function (id) { return have[id]; }));\n  const pick = fresh.concat(old).slice(0, Math.min(n, ids.length));\n  return 'SS1\\nL ' + pick.join(',') + '\\nEND';\n}\n\nfunction image_(id, chunkCsv) {\n  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);\n  const last = sh.getLastRow();\n  if (last < 2) return 'ERR empty';\n  const want = chunkCsv ? String(chunkCsv).split(',').map(Number) : null;\n  const data = sh.getRange(2, 1, last - 1, 4).getValues();\n  const out = ['SS1'];\n  for (let i = 0; i < data.length; i++) {\n    const r = data[i];\n    if (Number(r[0]) !== id) continue;\n    const idx = Number(r[1]);\n    if (want && want.indexOf(idx) < 0) continue;\n    out.push('C ' + id + ' ' + idx + ' ' + Number(r[2]).toString(16) + ' ' + r[3]);\n  }\n  out.push('END');\n  return out.join('\\n');\n}\n";
 const W = 300, H = 400, CHUNK = 3000, DATA_CHUNKS = 10;
 const $ = id => document.getElementById(id);
-let files = [], rows = [];
+const LS_KEY = 'ssConv.v2';
 
-// ---- CRC32 (IEEE) ----
+// ---------------------------------------------------------------------------
+// Settings spec (rendered into the controls panel, persisted to localStorage)
+// ---------------------------------------------------------------------------
+const SPEC = [
+  { h: 'Framing' },
+  { id: 'fit', label: 'Fit', type: 'select', def: 'cover', opts: [['cover', 'Fill (crop edges)'], ['contain', 'Whole picture (bars)']] },
+  { id: 'focusX', label: 'Crop focus X', type: 'range', min: 0, max: 100, step: 1, def: 50 },
+  { id: 'focusY', label: 'Crop focus Y', type: 'range', min: 0, max: 100, step: 1, def: 40 },
+  { id: 'bars', label: 'Bar colour', type: 'select', def: 'white', opts: [['white', 'White'], ['black', 'Black']] },
+  { h: 'Tone' },
+  { id: 'autolevels', label: 'Auto levels', type: 'check', def: true },
+  { id: 'clip', label: 'Level clip %', type: 'range', min: 0, max: 5, step: 0.1, def: 0.5 },
+  { id: 'brightness', label: 'Brightness', type: 'range', min: -100, max: 100, step: 1, def: 0 },
+  { id: 'contrast', label: 'Contrast', type: 'range', min: -100, max: 100, step: 1, def: 10 },
+  { id: 'gamma', label: 'Gamma', type: 'range', min: 0.4, max: 2.4, step: 0.05, def: 1 },
+  { id: 'saturation', label: 'Saturation', type: 'range', min: 0, max: 250, step: 1, def: 115 },
+  { id: 'sharpen', label: 'Sharpen', type: 'range', min: 0, max: 100, step: 1, def: 25 },
+  { h: 'Dithering' },
+  { id: 'algo', label: 'Algorithm', type: 'select', def: 'fs', opts: [['fs', 'Floyd–Steinberg'], ['atkinson', 'Atkinson (crisp, high contrast)'], ['jarvis', 'Jarvis (smooth)'], ['stucki', 'Stucki (smooth, sharp)'], ['bayer', 'Ordered (Bayer 8×8)'], ['none', 'None (flat colours)']] },
+  { id: 'strength', label: 'Strength', type: 'range', min: 0, max: 100, step: 1, def: 90 },
+  { id: 'serpentine', label: 'Serpentine scan', type: 'check', def: true },
+  { id: 'linear', label: 'Linear-light maths', type: 'check', def: true },
+  { h: 'Panel colours (what the paper really looks like)' },
+  { id: 'cWhite', label: 'White', type: 'color', def: '#d9d9d0' },
+  { id: 'cBlack', label: 'Black', type: 'color', def: '#1c1c1c' },
+  { id: 'cRed', label: 'Red', type: 'color', def: '#b3281e' },
+  { id: 'redBias', label: 'Red amount', type: 'range', min: 20, max: 300, step: 1, def: 100 },
+  { id: 'redSat', label: 'Red only above sat.', type: 'range', min: 0, max: 100, step: 1, def: 15 },
+];
+const PRESETS = {
+  photo:   { autolevels: true, clip: 0.5, contrast: 10, gamma: 1, saturation: 115, sharpen: 25, algo: 'fs', strength: 90, serpentine: true, linear: true, redBias: 100, redSat: 15 },
+  graphic: { autolevels: true, clip: 1.5, contrast: 35, gamma: 1, saturation: 150, sharpen: 10, algo: 'atkinson', strength: 100, serpentine: true, linear: false, redBias: 120, redSat: 10 },
+  soft:    { autolevels: true, clip: 0.3, contrast: 0, gamma: 1.1, saturation: 90, sharpen: 15, algo: 'jarvis', strength: 80, serpentine: true, linear: true, redBias: 60, redSat: 35 },
+  warm:    { autolevels: true, clip: 0.5, contrast: 15, gamma: 1, saturation: 140, sharpen: 25, algo: 'stucki', strength: 90, serpentine: true, linear: true, redBias: 170, redSat: 5 },
+};
+let S = {};      // current settings
+let extra = {};  // non-tuning fields saved with them
+
+function defaults() { const d = {}; SPEC.forEach(c => { if (c.id) d[c.id] = c.def; }); return d; }
+function loadState() {
+  S = defaults();
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    Object.keys(S).forEach(k => { if (k in (raw.S || {})) S[k] = raw.S[k]; });
+    extra = raw.extra || {};
+  } catch (e) { extra = {}; }
+}
+function saveState() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ S, extra })); $('saved').textContent = 'saved in this browser'; setTimeout(() => $('saved').textContent = '', 1200); } catch (e) {}
+}
+
+function buildControls() {
+  const box = $('controls'); box.innerHTML = '';
+  SPEC.forEach(c => {
+    if (c.h) { const h = document.createElement('h3'); h.textContent = c.h; box.appendChild(h); return; }
+    const row = document.createElement('div'); row.className = 'ctl' + (c.type === 'range' ? '' : ' two');
+    const lab = document.createElement('label'); lab.textContent = c.label; lab.htmlFor = 'c_' + c.id; row.appendChild(lab);
+    let el;
+    if (c.type === 'range') { el = document.createElement('input'); el.type = 'range'; el.min = c.min; el.max = c.max; el.step = c.step; el.value = S[c.id]; }
+    else if (c.type === 'select') { el = document.createElement('select'); c.opts.forEach(o => { const op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; el.appendChild(op); }); el.value = S[c.id]; }
+    else if (c.type === 'check') { el = document.createElement('input'); el.type = 'checkbox'; el.checked = !!S[c.id]; }
+    else if (c.type === 'color') { el = document.createElement('input'); el.type = 'color'; el.value = S[c.id]; }
+    el.id = 'c_' + c.id; row.appendChild(el);
+    if (c.type === 'range') { const out = document.createElement('output'); out.id = 'o_' + c.id; out.textContent = S[c.id]; row.appendChild(out); }
+    el.addEventListener('input', () => {
+      S[c.id] = c.type === 'check' ? el.checked : (c.type === 'range' ? parseFloat(el.value) : el.value);
+      if (c.type === 'range') $('o_' + c.id).textContent = S[c.id];
+      saveState(); schedulePreview();
+    });
+    box.appendChild(row);
+  });
+}
+function syncControls() {
+  SPEC.forEach(c => {
+    if (!c.id) return; const el = $('c_' + c.id); if (!el) return;
+    if (c.type === 'check') el.checked = !!S[c.id]; else el.value = S[c.id];
+    if (c.type === 'range') $('o_' + c.id).textContent = S[c.id];
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CRC32 / base64
+// ---------------------------------------------------------------------------
 const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
 function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
 
-// ---- quantise to white(0) / black(1) / red(2) ----
-function quantise(img, dither, redGain) {
-  const n = W * H, buf = new Float32Array(n * 3), out = new Uint8Array(n);
-  for (let i = 0; i < n; i++) { buf[i*3] = img[i*4]; buf[i*3+1] = img[i*4+1]; buf[i*3+2] = img[i*4+2]; }
-  const pal = [[255,255,255],[0,0,0],[200,25,25]];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x; const r = buf[i*3], g = buf[i*3+1], b = buf[i*3+2];
-    let best = 0, bd = 1e12;
-    for (let p = 0; p < 3; p++) {
-      let dr = r - pal[p][0], dg = g - pal[p][1], db = b - pal[p][2];
-      let d = dr*dr + dg*dg + db*db;
-      if (p === 2) d /= (redGain * redGain);
-      if (d < bd) { bd = d; best = p; }
+// ---------------------------------------------------------------------------
+// Image pipeline: framing -> tone -> quantise
+// ---------------------------------------------------------------------------
+const frame = document.createElement('canvas'); frame.width = W; frame.height = H;
+const fctx = frame.getContext('2d', { willReadFrequently: true });
+
+function isLandscape(im) { return im.width > im.height; }
+function shouldRotate(im, mode) { return isLandscape(im) && (mode === 'rotate' || mode === 'landscape'); }
+function accepted(im, mode) { return mode === 'vertical' ? !isLandscape(im) : mode === 'landscape' ? isLandscape(im) : true; }
+
+function frameImage(im, mode) {
+  const rot = shouldRotate(im, mode);
+  const iw = rot ? im.height : im.width, ih = rot ? im.width : im.height;
+  fctx.setTransform(1, 0, 0, 1, 0, 0);
+  fctx.fillStyle = S.bars === 'black' ? '#000' : '#fff'; fctx.fillRect(0, 0, W, H);
+  const sc = S.fit === 'cover' ? Math.max(W / iw, H / ih) : Math.min(W / iw, H / ih);
+  const dw = iw * sc, dh = ih * sc;
+  const ox = (W - dw) * (S.focusX / 100), oy = (H - dh) * (S.focusY / 100);
+  fctx.imageSmoothingQuality = 'high';
+  if (rot) { fctx.translate(ox + dw, oy); fctx.rotate(Math.PI / 2); fctx.drawImage(im, 0, 0, dh, dw); }
+  else fctx.drawImage(im, ox, oy, dw, dh);
+  fctx.setTransform(1, 0, 0, 1, 0, 0);
+  const d = fctx.getImageData(0, 0, W, H).data, n = W * H, out = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { out[i*3] = d[i*4]; out[i*3+1] = d[i*4+1]; out[i*3+2] = d[i*4+2]; }
+  return out;
+}
+
+function tone(rgb) {
+  const n = W * H;
+  // auto levels on luminance percentiles, applied equally to all channels (keeps hue)
+  if (S.autolevels) {
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < n; i++) hist[Math.max(0, Math.min(255, Math.round(0.299*rgb[i*3] + 0.587*rgb[i*3+1] + 0.114*rgb[i*3+2])))]++;
+    const cut = n * S.clip / 100; let acc = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc > cut) { lo = v; break; } }
+    acc = 0; for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc > cut) { hi = v; break; } }
+    if (hi - lo > 20) { const k = 255 / (hi - lo); for (let i = 0; i < n * 3; i++) rgb[i] = Math.max(0, Math.min(255, (rgb[i] - lo) * k)); }
+  }
+  const cf = Math.tan((S.contrast / 100 + 1) * Math.PI / 4), b = S.brightness / 100, ig = 1 / S.gamma, sat = S.saturation / 100;
+  for (let i = 0; i < n; i++) {
+    let r = rgb[i*3] / 255, g = rgb[i*3+1] / 255, bl = rgb[i*3+2] / 255;
+    r = (r - 0.5) * cf + 0.5 + b; g = (g - 0.5) * cf + 0.5 + b; bl = (bl - 0.5) * cf + 0.5 + b;
+    r = Math.pow(Math.max(0, Math.min(1, r)), ig); g = Math.pow(Math.max(0, Math.min(1, g)), ig); bl = Math.pow(Math.max(0, Math.min(1, bl)), ig);
+    const y = 0.299 * r + 0.587 * g + 0.114 * bl;
+    r = y + (r - y) * sat; g = y + (g - y) * sat; bl = y + (bl - y) * sat;
+    rgb[i*3] = Math.max(0, Math.min(1, r)) * 255; rgb[i*3+1] = Math.max(0, Math.min(1, g)) * 255; rgb[i*3+2] = Math.max(0, Math.min(1, bl)) * 255;
+  }
+  if (S.sharpen > 0) { // unsharp mask with a 3x3 box blur
+    const amt = S.sharpen / 100 * 1.5, src = rgb.slice();
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) for (let c = 0; c < 3; c++) {
+      let s = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s += src[((y+dy)*W + x+dx)*3 + c];
+      const i = (y*W + x)*3 + c; rgb[i] = Math.max(0, Math.min(255, src[i] + (src[i] - s / 9) * amt));
     }
-    out[i] = best;
-    if (dither === 'fs') {
-      const e = [r - pal[best][0], g - pal[best][1], b - pal[best][2]];
-      const spread = (dx, dy, f) => { const xx = x + dx, yy = y + dy; if (xx < 0 || xx >= W || yy >= H) return; const j = yy * W + xx; for (let c = 0; c < 3; c++) buf[j*3+c] += e[c] * f; };
-      spread(1,0,7/16); spread(-1,1,3/16); spread(0,1,5/16); spread(1,1,1/16);
+  }
+  return rgb;
+}
+
+const KERNELS = {
+  fs:       { d: 16, k: [[1,0,7],[-1,1,3],[0,1,5],[1,1,1]] },
+  atkinson: { d: 8,  k: [[1,0,1],[2,0,1],[-1,1,1],[0,1,1],[1,1,1],[0,2,1]] },
+  jarvis:   { d: 48, k: [[1,0,7],[2,0,5],[-2,1,3],[-1,1,5],[0,1,7],[1,1,5],[2,1,3],[-2,2,1],[-1,2,3],[0,2,5],[1,2,3],[2,2,1]] },
+  stucki:   { d: 42, k: [[1,0,8],[2,0,4],[-2,1,2],[-1,1,4],[0,1,8],[1,1,4],[2,1,2],[-2,2,1],[-1,2,2],[0,2,4],[1,2,2],[2,2,1]] },
+};
+const BAYER8 = (() => { const m = [[0]]; let s = 1; while (s < 8) { const n = []; for (let y = 0; y < s * 2; y++) { n.push([]); for (let x = 0; x < s * 2; x++) { const q = m[y % s][x % s] * 4; n[y][x] = q + (y < s ? (x < s ? 0 : 2) : (x < s ? 3 : 1)); } } m.length = 0; n.forEach(r => m.push(r)); s *= 2; } return m; })();
+
+const toLin = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+const toSrgb = v => 255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+
+function palette() { return [hex(S.cWhite), hex(S.cBlack), hex(S.cRed)]; }
+
+// returns Uint8Array of palette codes: 0 white, 1 black, 2 red
+function quantise(rgb) {
+  const n = W * H, pal = palette(), lin = S.linear;
+  const sat = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const mx = Math.max(rgb[i*3], rgb[i*3+1], rgb[i*3+2]), mn = Math.min(rgb[i*3], rgb[i*3+1], rgb[i*3+2]); sat[i] = mx > 0 ? (mx - mn) / mx * 100 : 0; }
+  const buf = new Float32Array(n * 3);
+  for (let i = 0; i < n * 3; i++) buf[i] = lin ? toLin(rgb[i]) : rgb[i];
+  const P = pal.map(c => c.map(v => lin ? toLin(v) : v));
+  const scale = lin ? 1 : 255, wt = [0.35, 0.45, 0.2];
+  const redGain = Math.pow(S.redBias / 100, 2);
+  const out = new Uint8Array(n);
+  const algo = S.algo, kern = KERNELS[algo], str = S.strength / 100;
+  const spread = (lin ? 0.5 : 110) * str;
+
+  for (let y = 0; y < H; y++) {
+    const flip = S.serpentine && kern && (y & 1);
+    for (let xi = 0; xi < W; xi++) {
+      const x = flip ? W - 1 - xi : xi, i = y * W + x;
+      let r = buf[i*3], g = buf[i*3+1], b = buf[i*3+2];
+      if (algo === 'bayer') { const t = (BAYER8[y & 7][x & 7] / 64 - 0.5) * spread; r += t; g += t; b += t; }
+      let best = 0, bd = 1e12;
+      for (let p = 0; p < 3; p++) {
+        if (p === 2 && sat[i] < S.redSat) continue;
+        const dr = (r - P[p][0]) / scale, dg = (g - P[p][1]) / scale, db = (b - P[p][2]) / scale;
+        let d = wt[0]*dr*dr + wt[1]*dg*dg + wt[2]*db*db;
+        if (p === 2) d /= redGain;
+        if (d < bd) { bd = d; best = p; }
+      }
+      out[i] = best;
+      if (kern) {
+        const er = (buf[i*3] - P[best][0]) * str, eg = (buf[i*3+1] - P[best][1]) * str, eb = (buf[i*3+2] - P[best][2]) * str;
+        for (let k = 0; k < kern.k.length; k++) {
+          const dx = flip ? -kern.k[k][0] : kern.k[k][0], xx = x + dx, yy = y + kern.k[k][1];
+          if (xx < 0 || xx >= W || yy >= H) continue;
+          const f = kern.k[k][2] / kern.d, j = (yy * W + xx) * 3;
+          buf[j] += er * f; buf[j+1] += eg * f; buf[j+2] += eb * f;
+        }
+      }
     }
   }
   return out;
 }
+
 function pack2bpp(codes) { const out = new Uint8Array(W * H / 4); for (let i = 0; i < codes.length; i++) out[i >> 2] |= (codes[i] & 3) << (6 - 2 * (i & 3)); return out; }
+
+function paint(canvas, codes) {
+  const pal = palette(), ctx = canvas.getContext('2d'), d = ctx.createImageData(W, H);
+  for (let i = 0; i < codes.length; i++) { const c = pal[codes[i]] || pal[0]; d.data[i*4] = c[0]; d.data[i*4+1] = c[1]; d.data[i*4+2] = c[2]; d.data[i*4+3] = 255; }
+  ctx.putImageData(d, 0, 0);
+}
+function paintRgb(canvas, rgb) {
+  const ctx = canvas.getContext('2d'), d = ctx.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) { d.data[i*4] = rgb[i*3]; d.data[i*4+1] = rgb[i*3+1]; d.data[i*4+2] = rgb[i*3+2]; d.data[i*4+3] = 255; }
+  ctx.putImageData(d, 0, 0);
+}
 
 function buildRecord(id, payload) {
   const hdr = new Uint8Array(32), dv = new DataView(hdr.buffer);
   hdr.set([0x53, 0x53, 0x49, 0x31], 0);          // "SSI1"
-  dv.setUint8(4, 1); dv.setUint8(5, 0);          // version, flags
+  dv.setUint8(4, 1); dv.setUint8(5, 0);
   dv.setUint16(6, W, true); dv.setUint16(8, H, true);
-  dv.setUint8(10, 2); dv.setUint8(11, 0);        // bpp, palette (W,B,R)
+  dv.setUint8(10, 2); dv.setUint8(11, 0);
   dv.setUint16(12, CHUNK, true); dv.setUint16(14, DATA_CHUNKS, true);
   dv.setUint32(16, payload.length, true); dv.setUint32(20, crc32(payload), true); dv.setUint32(24, id, true);
   dv.setUint32(28, crc32(hdr.subarray(0, 28)), true);
@@ -124,49 +372,107 @@ function buildRecord(id, payload) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// File handling + preview
+// ---------------------------------------------------------------------------
+let items = [];   // { file, im, ok, canvas }
+let selected = 0, rows = [];
+
 function loadBitmap(file) {
-  return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = rej; im.src = u; });
+  return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => { res(im); }; im.onerror = rej; im.src = u; });
+}
+async function setFiles(list) {
+  const files = [...list].filter(f => f.type.startsWith('image/')).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  $('status').textContent = 'Loading ' + files.length + ' pictures...';
+  items = [];
+  for (const f of files) { try { items.push({ file: f, im: await loadBitmap(f) }); } catch (e) { console.warn('skip', f.name); } }
+  selected = 0; rows = []; $('dl').disabled = true;
+  renderGrid(); schedulePreview();
+}
+function renderGrid() {
+  const mode = $('orient').value, g = $('grid'); g.innerHTML = '';
+  let ok = 0;
+  items.forEach((it, idx) => {
+    it.ok = accepted(it.im, mode); if (it.ok) ok++;
+    const box = document.createElement('div'); box.className = 'thumb' + (it.ok ? '' : ' skip') + (idx === selected ? ' sel' : '');
+    const c = document.createElement('canvas'); c.width = 60; c.height = 80;
+    const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, 60, 80);
+    const rot = shouldRotate(it.im, mode), iw = rot ? it.im.height : it.im.width, ih = rot ? it.im.width : it.im.height, s = Math.max(60 / iw, 80 / ih);
+    cx.save(); if (rot) { cx.translate((60 - iw*s)/2 + iw*s, (80 - ih*s)/2); cx.rotate(Math.PI/2); cx.drawImage(it.im, 0, 0, ih*s, iw*s); } else cx.drawImage(it.im, (60 - iw*s)/2, (80 - ih*s)/2, iw*s, ih*s); cx.restore();
+    it.canvas = c; box.appendChild(c); box.append((it.ok ? '' : 'skipped: ') + it.file.name);
+    box.onclick = () => { selected = idx; document.querySelectorAll('.thumb').forEach((t, i) => t.classList.toggle('sel', i === idx)); schedulePreview(); };
+    g.appendChild(box);
+  });
+  $('status').textContent = items.length + ' pictures, ' + ok + ' will be converted' + (ok < items.length ? ' (' + (items.length - ok) + ' skipped by the filter)' : '');
+  $('go').disabled = !ok;
+}
+
+let pvTimer = 0;
+function schedulePreview() { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 90); }
+function renderPreview() {
+  const it = items[selected]; if (!it) return;
+  const mode = $('orient').value;
+  const rgb = tone(frameImage(it.im, mode));
+  paintRgb($('pvSrc'), rgb);
+  paint($('pvOut'), quantise(rgb));
 }
 
 $('drop').onclick = () => $('files').click();
-$('drop').ondragover = e => e.preventDefault();
-$('drop').ondrop = e => { e.preventDefault(); setFiles(e.dataTransfer.files); };
+$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('hot'); };
+$('drop').ondragleave = () => $('drop').classList.remove('hot');
+$('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('hot'); setFiles(e.dataTransfer.files); };
 $('files').onchange = e => setFiles(e.target.files);
-function setFiles(list) { files = [...list].filter(f => f.type.startsWith('image/')).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true})); $('status').textContent = files.length + ' pictures selected'; $('go').disabled = !files.length; }
+$('orient').onchange = () => { extra.orient = $('orient').value; saveState(); renderGrid(); schedulePreview(); };
+$('startid').onchange = () => { extra.startid = parseInt($('startid').value, 10) || 1; saveState(); };
+$('preset').onchange = () => { const p = PRESETS[$('preset').value]; if (!p) return; Object.assign(S, p); syncControls(); saveState(); schedulePreview(); };
+$('reset').onclick = () => { S = defaults(); syncControls(); saveState(); schedulePreview(); };
 
 $('go').onclick = async () => {
-  $('go').disabled = true; $('dl').disabled = true; rows = []; $('grid').innerHTML = '';
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d', { willReadFrequently: true });
-  let id = parseInt($('startid').value, 10) || 1;
-  for (let f = 0; f < files.length; f++) {
-    $('status').textContent = `Converting ${f + 1}/${files.length}: ${files[f].name}`;
+  $('go').disabled = true; $('dl').disabled = true; rows = [];
+  const mode = $('orient').value, todo = items.filter(i => i.ok);
+  let id = parseInt($('startid').value, 10) || 1, done = 0;
+  for (const it of todo) {
+    $('status').textContent = `Converting ${++done}/${todo.length}: ${it.file.name}`;
     await new Promise(r => setTimeout(r));
-    try {
-      const im = await loadBitmap(files[f]);
-      cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
-      const s = ($('fit').value === 'cover') ? Math.max(W / im.width, H / im.height) : Math.min(W / im.width, H / im.height);
-      const dw = im.width * s, dh = im.height * s;
-      cx.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
-      const codes = quantise(cx.getImageData(0, 0, W, H).data, $('dither').value, parseFloat($('red').value));
-      const payload = pack2bpp(codes);
-      rows.push(...buildRecord(id, payload));
-      // preview of what the panel will show
-      const pv = document.createElement('canvas'); pv.width = W; pv.height = H; const pc = pv.getContext('2d'), d = pc.createImageData(W, H);
-      const col = [[255,255,255],[0,0,0],[200,25,25],[255,255,255]];
-      for (let i = 0; i < codes.length; i++) { const c = col[codes[i]]; d.data[i*4] = c[0]; d.data[i*4+1] = c[1]; d.data[i*4+2] = c[2]; d.data[i*4+3] = 255; }
-      pc.putImageData(d, 0, 0);
-      const box = document.createElement('div'); box.className = 'thumb'; box.appendChild(pv); box.append('ID ' + id + ' · ' + files[f].name); $('grid').appendChild(box);
-      id++;
-    } catch (e) { console.error(e); }
+    const codes = quantise(tone(frameImage(it.im, mode)));
+    rows.push(...buildRecord(id, pack2bpp(codes)));
+    id++;
   }
-  $('status').textContent = `Done: ${rows.length / 13} images, ${rows.length} sheet rows.`;
+  $('status').textContent = `Done: ${rows.length / 13} images (IDs ${parseInt($('startid').value, 10) || 1}-${id - 1}), ${rows.length} sheet rows.`;
   $('go').disabled = false; $('dl').disabled = !rows.length;
 };
-
 $('dl').onclick = () => {
   const csv = 'image_id,chunk_idx,crc32,data\n' + rows.map(r => `${r[0]},${r[1]},${r[2]},"${r[3]}"`).join('\n') + '\n';
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'screensaver_sheet.csv'; a.click();
 };
+
+// ---------------------------------------------------------------------------
+// Apps Script box
+// ---------------------------------------------------------------------------
+function randomSecret() { const a = new Uint8Array(12); crypto.getRandomValues(a); return [...a].map(b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join(''); }
+function refreshScript() {
+  const sheet = ($('sheetName').value || 'Images').trim(), secret = $('secret').value.trim();
+  $('script').value = GS_TEMPLATE.split('__SECRET__').join(secret).split('__SHEET__').join(sheet);
+  $('sheetNameHint').textContent = sheet;
+  const url = $('execUrl').value.trim();
+  $('finalUrl').value = url ? url + (url.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(secret) : '';
+  extra.secret = secret; extra.sheet = sheet; extra.execUrl = url; saveState();
+}
+$('genSecret').onclick = () => { $('secret').value = randomSecret(); refreshScript(); };
+['secret', 'sheetName', 'execUrl'].forEach(id => $(id).addEventListener('input', refreshScript));
+async function copyText(text, el, msg) { try { await navigator.clipboard.writeText(text); } catch (e) { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } el.textContent = msg; setTimeout(() => el.textContent = '', 2000); }
+$('copyScript').onclick = () => copyText($('script').value, $('copied'), 'Script copied. Paste it into Apps Script.');
+$('copyUrl').onclick = () => copyText($('finalUrl').value, $('copied'), 'URL copied.');
+
+// ---------------------------------------------------------------------------
+loadState();
+buildControls();
+$('orient').value = extra.orient || 'all';
+$('startid').value = extra.startid || 1;
+$('secret').value = extra.secret || randomSecret();
+$('sheetName').value = extra.sheet || 'Images';
+$('execUrl').value = extra.execUrl || '';
+refreshScript();
 </script>
 </body>
 </html>
