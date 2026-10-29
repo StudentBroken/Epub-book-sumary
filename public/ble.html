@@ -623,10 +623,26 @@
     <div class="card" id="screensaver-card">
       <h2 style="margin-bottom: 0.4rem;">WiFi &amp; Colour Screensaver</h2>
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.9rem;">
-        Saved on the E-Reader (up to 4 networks). Every 12 h it looks for one of them; weekly it downloads 14 random
-        images from your Google Apps Script. Prepare images with the <a href="./screensaver.html" style="color: var(--accent);">Screensaver Converter</a>.
-        Connect over BLE first (use the e-reader's "Wireless BLE Upload" menu).
+        Saved on the E-Reader (up to 4 networks). It uses these networks to download pictures from your Google Apps Script for the
+        colour screensaver, Picture Frame and Photo Screensaver Mode. Connect over BLE first (e-reader: <i>Menu &rarr; Device &rarr; Wireless BLE Upload</i>).
       </p>
+      <details open style="margin: 0 0 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--border); border-radius: 0.5rem; font-size: 0.85rem; line-height: 1.55;">
+        <summary style="cursor: pointer; font-weight: 600;">Easy setup (5 steps)</summary>
+        <ol style="margin: 0.6rem 0 0.4rem 1.1rem; padding: 0;">
+          <li><b>Make the images.</b> Open the <a href="./screensaver.html" style="color: var(--accent);">Screensaver Converter</a>, add your pictures, pick the orientation and download the CSV.</li>
+          <li><b>Fill a Google Sheet.</b> Create a sheet, rename its tab to exactly <code>Images</code>, then <i>File &rarr; Import &rarr; Upload &rarr; Replace current sheet</i> with the CSV. One sheet works forever, nothing to update.</li>
+          <li><b>Add the script.</b> In the sheet: <i>Extensions &rarr; Apps Script</i>. Paste the code from the converter's <i>Apps Script</i> box over <code>Code.gs</code>, save, pick <code>doGet</code> and press <i>Run</i> once, then <i>Review permissions &rarr; Allow</i>.</li>
+          <li><b>Deploy it.</b> <i>Deploy &rarr; New deployment &rarr; Web app</i>, Execute as <b>Me</b>, access <b>Anyone</b>. Copy the <code>/exec</code> URL and add <code>?k=YOUR_SECRET</code> (the converter builds this URL for you).</li>
+          <li><b>Send it to the e-reader.</b> On the device open <i>Menu &rarr; Device &rarr; Wireless BLE Upload</i>, press Connect on this page, fill in WiFi name, password and the URL below, then <i>Save to E-Reader</i>.</li>
+        </ol>
+        <div style="margin-top: 0.5rem;"><b>Then, on the e-reader</b> (<i>Menu &rarr; Screensaver &amp; Frame</i>):</div>
+        <ul style="margin: 0.3rem 0 0.4rem 1.1rem; padding: 0;">
+          <li><b>Show Screensaver Now</b> downloads the first images and shows one (about 3 min the first time).</li>
+          <li><b>Picture Frame</b> (main menu) stays awake: D4 = previous, D5 = next (tap twice to skip two), D9 = exit. Choose <i>Frame order</i> Shuffle or In order. It checks online for more images when the list runs out and leaves itself under 25% battery.</li>
+          <li><b>Photo Screensaver Mode</b> sleeps between pictures: a new one every 10 min, fresh downloads every 3 h, stops under 25% battery.</li>
+        </ul>
+        <div style="color: var(--text-muted);">Trouble? &ldquo;HTTP 403&rdquo; = web app access is not <i>Anyone</i> or step 3 was skipped. &ldquo;ERR forbidden&rdquo; = wrong or missing <code>?k=</code> key. A null error mentioning <code>getLastRow</code> = the tab is not called <code>Images</code>. &ldquo;In order&rdquo; needs the latest script from the converter.</div>
+      </details>
       <div id="wifi-slots"></div>
       <label style="display:block; font-size:0.8rem; color: var(--text-muted); margin: 0.9rem 0 0.25rem;">Apps Script web app URL (ends in /exec, include ?k=YOUR_KEY)</label>
       <input id="ss-url" type="text" placeholder="https://script.google.com/macros/s/.../exec?k=secret" style="width:100%; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background: transparent; color: inherit; font-family: var(--mono-font);">
@@ -1294,7 +1310,7 @@
         packet.set(ub, 2);
         log('[BLE] Saving screensaver settings...');
         await sendCtrlAndWait(packet, 'screensaver save');
-        log('[BLE SUCCESS] WiFi + screensaver saved. First image sync happens at the next 12 h wake.', '#10b981');
+        log('[BLE SUCCESS] WiFi + screensaver saved. On the e-reader open Menu > Screensaver & Frame > Show Screensaver Now to fetch images right away.', '#10b981');
       } catch (err) {
         log('[BLE ERR] ' + err.message, '#ef4444');
       }
