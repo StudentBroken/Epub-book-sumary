@@ -88,7 +88,13 @@ export async function parseEpubFile(fileOrBlob) {
     }
 
     // Extract chapter title or heading
-    const detectedHeading = chapterDoc.querySelector('h1, h2, h3, title')?.textContent?.trim();
+    // Use body headings only: a bare 'title' query would match <head><title>, i.e. the BOOK title,
+    // giving every chapter the same name. Fall back to the first short line of the chapter text.
+    let detectedHeading = (chapterDoc.body || chapterDoc).querySelector('h1, h2, h3')?.textContent?.trim();
+    if (!detectedHeading) {
+      const firstLine = cleanedText.split('\n').map(l => l.trim()).find(Boolean);
+      if (firstLine && firstLine.length <= 60 && wordCount > 150) detectedHeading = firstLine;
+    }
     const chapterTitle = cleanChapterTitle(detectedHeading, chapterIndex, wordCount);
 
     rawChapters.push({

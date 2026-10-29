@@ -339,6 +339,39 @@ export const EBK2_CONFIG = {
 };
 
 /**
+ * Normalizes typography the same way tools/ebk_converter.py does so every glyph exists in the
+ * device's UTF-8 bitmap font (curly quotes, dashes, ellipsis, ligatures, non-breaking spaces).
+ */
+export function normalizeForDevice(text) {
+  return String(text ?? '')
+    .normalize('NFC')
+    .replace(/[\u00a0\u202f\u2009]/g, ' ')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\u2014/g, ' -- ')
+    .replace(/\u2013/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u0153/g, 'oe').replace(/\u0152/g, 'OE')
+    .replace(/\u00e6/g, 'ae').replace(/\u00c6/g, 'AE');
+}
+
+/**
+ * UTF-8 encodes `str` into at most `maxBytes` bytes without cutting a multi-byte character in half.
+ */
+function encodeUtf8Truncated(str, maxBytes) {
+  const encoder = new TextEncoder();
+  let out = '';
+  let used = 0;
+  for (const ch of str) {
+    const len = encoder.encode(ch).length;
+    if (used + len > maxBytes) break;
+    out += ch;
+    used += len;
+  }
+  return encoder.encode(out);
+}
+
+/**
  * Builds the compact EBK v2 structured text container.
  * Stores UTF-8 text with chapter table of contents for on-device reflow and dynamic font sizing.
  * 
@@ -361,7 +394,7 @@ export function buildEbk2Binary({ title = 'Untitled Book', author = 'Unknown', c
   let totalPayloadSize = 0;
 
   for (let i = 0; i < totalChapters; i++) {
-    const rawText = chapters[i].text || '';
+    const rawText = normalizeForDevice(chapters[i].text || '');
     const bytes = encoder.encode(rawText);
     encodedPayloads.push(bytes);
     totalPayloadSize += bytes.length;
@@ -385,13 +418,13 @@ export function buildEbk2Binary({ title = 'Untitled Book', author = 'Unknown', c
   view.setUint16(4, 2, true);
 
   // Title: 64 bytes (null-padded)
-  const titleBytes = encoder.encode(title.trim().slice(0, 63));
+  const titleBytes = encodeUtf8Truncated(normalizeForDevice(title).trim(), 63);
   for (let i = 0; i < 64; i++) {
     buffer[6 + i] = i < titleBytes.length ? titleBytes[i] : 0x00;
   }
 
   // Author: 32 bytes (null-padded)
-  const authorBytes = encoder.encode(author.trim().slice(0, 31));
+  const authorBytes = encodeUtf8Truncated(normalizeForDevice(author).trim(), 31);
   for (let i = 0; i < 32; i++) {
     buffer[70 + i] = i < authorBytes.length ? authorBytes[i] : 0x00;
   }
@@ -404,8 +437,8 @@ export function buildEbk2Binary({ title = 'Untitled Book', author = 'Unknown', c
   let currentPayloadOffset = firstPayloadOffset;
 
   for (let i = 0; i < totalChapters; i++) {
-    const chapTitle = (chapters[i].title || `Chapter ${i + 1}`).trim().slice(0, 31);
-    const chapTitleBytes = encoder.encode(chapTitle);
+    const chapTitle = normalizeForDevice(chapters[i].title || `Chapter ${i + 1}`).trim();
+    const chapTitleBytes = encodeUtf8Truncated(chapTitle, 31); // 31 bytes + NUL fits the 32-byte field
     const payloadBytes = encodedPayloads[i];
 
     // Chapter Title (32 bytes)

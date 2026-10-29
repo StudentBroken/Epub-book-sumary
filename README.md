@@ -69,3 +69,13 @@ npm run build
 # Preview production build locally
 npm run preview
 ```
+
+## 🖼️ Colour Screensaver & WiFi (E-Reader)
+
+Three pieces, all in this project plus the firmware's `tools/screensaver/apps_script.gs`:
+
+1. **Converter (`/screensaver.html`)**: drop ~100 pictures (download from Drive first), it fits them to 300×400 portrait, dithers to white/black/red, packs 2 bits per pixel (SSI v1), splits each image into 13 CRC-protected rows (header, 10 data chunks, XOR parity, header copy) and exports `screensaver_sheet.csv`.
+2. **Google Sheet + Apps Script**: import the CSV into a tab named `Images`, paste `apps_script.gs`, set `SECRET`, deploy as a web app (execute as you, anyone with the link).
+3. **E-Reader Studio (`/ble.html`) → "WiFi & Colour Screensaver" card**: while the device is in BLE upload mode, save up to 4 WiFi networks, the web app URL (`.../exec?k=SECRET`) and the screensaver toggle.
+
+The device then wakes every 12 h, syncs 14 random images weekly (4 attempts max) and shows one new image per day after the Zzz screen.

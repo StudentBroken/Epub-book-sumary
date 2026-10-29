@@ -619,6 +619,25 @@
       </div>
     </div>
 
+    <!-- WiFi + Colour Screensaver Card -->
+    <div class="card" id="screensaver-card">
+      <h2 style="margin-bottom: 0.4rem;">WiFi &amp; Colour Screensaver</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.9rem;">
+        Saved on the E-Reader (up to 4 networks). Every 12 h it looks for one of them; weekly it downloads 14 random
+        images from your Google Apps Script. Prepare images with the <a href="./screensaver.html" style="color: var(--accent);">Screensaver Converter</a>.
+        Connect over BLE first (use the e-reader's "Wireless BLE Upload" menu).
+      </p>
+      <div id="wifi-slots"></div>
+      <label style="display:block; font-size:0.8rem; color: var(--text-muted); margin: 0.9rem 0 0.25rem;">Apps Script web app URL (ends in /exec, include ?k=YOUR_KEY)</label>
+      <input id="ss-url" type="text" placeholder="https://script.google.com/macros/s/.../exec?k=secret" style="width:100%; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background: transparent; color: inherit; font-family: var(--mono-font);">
+      <label style="display:flex; gap:0.5rem; align-items:center; margin-top:0.6rem; font-size:0.9rem;">
+        <input id="ss-enabled" type="checkbox" checked> Show colour screensaver after sleep
+      </label>
+      <div style="margin-top: 0.9rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
+        <button id="ss-save-btn" class="action-btn" disabled>Save to E-Reader</button>
+      </div>
+    </div>
+
     <!-- Wireless Firmware OTA Card -->
     <div class="card" id="ota-card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
@@ -1044,7 +1063,11 @@
         const tdProg = document.createElement('td');
         tdProg.style.fontFamily = 'var(--mono-font)';
         tdProg.style.fontSize = '0.82rem';
-        if (b.tot > 0) {
+        if (b.fmt === 2 && b.chs > 0) {
+          // v2 text book: chapter N of M and percent through the current chapter
+          tdProg.textContent = `Ch. ${b.ch} / ${b.chs} · ${b.pct}%`;
+          if (b.ctitle) tdProg.title = b.ctitle;
+        } else if (b.tot > 0) {
           const progPct = Math.round((Math.max(1, b.cur) / b.tot) * 100);
           tdProg.textContent = `Page ${b.cur || 1} / ${b.tot} (${progPct}%)`;
         } else {
@@ -1224,6 +1247,64 @@
         log('[BLE ERR] Delete book error: ' + err.message, '#ef4444');
       }
     }
+
+    // =========================================================================
+    // WIFI + COLOUR SCREENSAVER SETTINGS
+    // =========================================================================
+    const wifiSlotsEl = document.getElementById('wifi-slots');
+    const ssSaveBtn = document.getElementById('ss-save-btn');
+    for (let i = 0; i < 4; i++) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:0.5rem; margin-bottom:0.4rem; flex-wrap:wrap;';
+      row.innerHTML = `<input id="wifi-ssid-${i}" type="text" maxlength="32" placeholder="Network ${i + 1} SSID (blank = clear)" style="flex:1; min-width:150px; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background:transparent; color:inherit;">
+        <input id="wifi-pass-${i}" type="password" placeholder="Password" style="flex:1; min-width:150px; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background:transparent; color:inherit;">`;
+      wifiSlotsEl.appendChild(row);
+    }
+
+    async function sendCtrlAndWait(packet, label) {
+      const opPromise = new Promise((resolve, reject) => {
+        pendingOpResolver = resolve;
+        setTimeout(() => reject(new Error('Timeout waiting for ' + label)), 5000);
+      });
+      await bleCtrlChar.writeValue(packet);
+      const res = await opPromise;
+      if (!res || !res.success) throw new Error(res ? res.reason : label + ' failed');
+    }
+
+    ssSaveBtn.addEventListener('click', async () => {
+      if (!bleCtrlChar || !bleServer || !bleServer.connected) return;
+      const enc = new TextEncoder();
+      try {
+        for (let i = 0; i < 4; i++) {
+          const ssid = document.getElementById('wifi-ssid-' + i).value.trim();
+          const pass = document.getElementById('wifi-pass-' + i).value;
+          const dirty = ssid.length > 0 || document.getElementById('wifi-ssid-' + i).dataset.touched;
+          if (!dirty) continue;
+          const sb = enc.encode(ssid), pb = enc.encode(pass);
+          const packet = new Uint8Array(3 + sb.length + pb.length);
+          packet[0] = 0x20; packet[1] = i; packet[2] = sb.length;
+          packet.set(sb, 3); packet.set(pb, 3 + sb.length);
+          log(`[BLE] Saving WiFi slot ${i + 1}...`);
+          await sendCtrlAndWait(packet, 'WiFi save');
+        }
+        const url = document.getElementById('ss-url').value.trim();
+        const ub = enc.encode(url);
+        const packet = new Uint8Array(2 + ub.length);
+        packet[0] = 0x21; packet[1] = document.getElementById('ss-enabled').checked ? 1 : 0;
+        packet.set(ub, 2);
+        log('[BLE] Saving screensaver settings...');
+        await sendCtrlAndWait(packet, 'screensaver save');
+        log('[BLE SUCCESS] WiFi + screensaver saved. First image sync happens at the next 12 h wake.', '#10b981');
+      } catch (err) {
+        log('[BLE ERR] ' + err.message, '#ef4444');
+      }
+    });
+    for (let i = 0; i < 4; i++) {
+      document.getElementById('wifi-ssid-' + i).addEventListener('input', e => { e.target.dataset.touched = '1'; });
+    }
+    setInterval(() => {
+      ssSaveBtn.disabled = !(bleCtrlChar && bleServer && bleServer.connected);
+    }, 500);
 
     // =========================================================================
     // WEB SERIAL (USB) HANDLER

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E-Reader Screensaver Converter</title>
+  <style>
+    :root { --bg:#0f1420; --card:#171e2e; --text:#e6eaf2; --muted:#8a94a8; --accent:#38bdf8; --border:#2a3550; }
+    @media (prefers-color-scheme: light) { :root { --bg:#f4f6fa; --card:#fff; --text:#18202e; --muted:#5b6578; --accent:#0369a1; --border:#d5dbe7; } }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:1.5rem 1rem 3rem; background:var(--bg); color:var(--text); font:15px/1.5 system-ui, sans-serif; }
+    main { max-width: 980px; margin: 0 auto; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:.75rem; padding:1.1rem 1.25rem; margin-bottom:1rem; }
+    h1 { font-size:1.35rem; margin:0 0 .3rem; } h2 { font-size:1.05rem; margin:0 0 .6rem; }
+    p, li { color:var(--muted); font-size:.9rem; } code { background:rgba(127,127,127,.18); padding:.05rem .3rem; border-radius:.25rem; }
+    .row { display:flex; gap:.9rem; flex-wrap:wrap; align-items:center; margin:.5rem 0; }
+    select, input[type=number] { padding:.4rem; border-radius:.4rem; border:1px solid var(--border); background:transparent; color:inherit; }
+    button { padding:.55rem 1rem; border-radius:.45rem; border:0; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    #drop { border:2px dashed var(--border); border-radius:.6rem; padding:1.6rem; text-align:center; cursor:pointer; color:var(--muted); }
+    #grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:.7rem; margin-top:.8rem; }
+    .thumb { text-align:center; font-size:.75rem; color:var(--muted); }
+    .thumb canvas { width:100%; height:auto; border:1px solid var(--border); background:#fff; image-rendering:pixelated; }
+    #status { font-family: ui-monospace, monospace; font-size:.8rem; color:var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <p style="margin:0 0 .4rem"><a href="./index.html" style="color:var(--accent)">&larr; LuminaEPUB</a> &middot; <a href="./ble.html" style="color:var(--accent)">E-Reader Studio (WiFi setup)</a></p>
+    <h1>Screensaver Converter</h1>
+    <p>Turns pictures into the e-reader's <b>SSI v1</b> format (300&times;400 portrait, 2 bits per pixel: white / black / red),
+      splits them into CRC-protected chunks with a parity chunk, and exports a CSV to import into your Google Sheet.</p>
+  </div>
+
+  <div class="card">
+    <h2>1. Pick pictures (download them from Drive first)</h2>
+    <div id="drop">Drop images here or click to choose (about 100 is fine)</div>
+    <input id="files" type="file" accept="image/*" multiple hidden>
+    <div class="row">
+      <label>Fit
+        <select id="fit"><option value="cover">Fill (crop edges)</option><option value="contain">Whole picture (white bars)</option></select>
+      </label>
+      <label>Dither
+        <select id="dither"><option value="fs">Floyd&ndash;Steinberg</option><option value="none">None (flat colours)</option></select>
+      </label>
+      <label>Red strength
+        <select id="red"><option value="0.85">Low</option><option value="1" selected>Normal</option><option value="1.25">High</option></select>
+      </label>
+      <label>First image ID <input id="startid" type="number" value="1" min="1" style="width:5.5rem"></label>
+      <button id="go" disabled>Convert</button>
+      <button id="dl" disabled>Download sheet CSV</button>
+    </div>
+    <div id="status"></div>
+    <div id="grid"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Put it in Google Sheets</h2>
+    <ol>
+      <li>Create a Sheet with a tab named <code>Images</code>. <b>File &rarr; Import &rarr; Upload</b> the CSV, choose <i>Replace current sheet</i> (the header row stays in row 1).</li>
+      <li>Columns: <code>image_id, chunk_idx, crc32 (decimal), data (base64)</code>. One image = 13 rows (header, 10 data chunks, parity, header copy).</li>
+      <li>Open <b>Extensions &rarr; Apps Script</b>, paste <code>tools/screensaver/apps_script.gs</code> from the firmware repo, set <code>SECRET</code>, and <b>Deploy &rarr; Web app</b> (execute as you, access: anyone).</li>
+      <li>In the <a href="./ble.html" style="color:var(--accent)">E-Reader Studio</a>, enter your WiFi and the web app URL followed by <code>?k=YOUR_SECRET</code>.</li>
+    </ol>
+  </div>
+</main>
+
+<script>
+const W = 300, H = 400, CHUNK = 3000, DATA_CHUNKS = 10;
+const $ = id => document.getElementById(id);
+let files = [], rows = [];
+
+// ---- CRC32 (IEEE) ----
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+
+// ---- quantise to white(0) / black(1) / red(2) ----
+function quantise(img, dither, redGain) {
+  const n = W * H, buf = new Float32Array(n * 3), out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) { buf[i*3] = img[i*4]; buf[i*3+1] = img[i*4+1]; buf[i*3+2] = img[i*4+2]; }
+  const pal = [[255,255,255],[0,0,0],[200,25,25]];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x; const r = buf[i*3], g = buf[i*3+1], b = buf[i*3+2];
+    let best = 0, bd = 1e12;
+    for (let p = 0; p < 3; p++) {
+      let dr = r - pal[p][0], dg = g - pal[p][1], db = b - pal[p][2];
+      let d = dr*dr + dg*dg + db*db;
+      if (p === 2) d /= (redGain * redGain);
+      if (d < bd) { bd = d; best = p; }
+    }
+    out[i] = best;
+    if (dither === 'fs') {
+      const e = [r - pal[best][0], g - pal[best][1], b - pal[best][2]];
+      const spread = (dx, dy, f) => { const xx = x + dx, yy = y + dy; if (xx < 0 || xx >= W || yy >= H) return; const j = yy * W + xx; for (let c = 0; c < 3; c++) buf[j*3+c] += e[c] * f; };
+      spread(1,0,7/16); spread(-1,1,3/16); spread(0,1,5/16); spread(1,1,1/16);
+    }
+  }
+  return out;
+}
+function pack2bpp(codes) { const out = new Uint8Array(W * H / 4); for (let i = 0; i < codes.length; i++) out[i >> 2] |= (codes[i] & 3) << (6 - 2 * (i & 3)); return out; }
+
+function buildRecord(id, payload) {
+  const hdr = new Uint8Array(32), dv = new DataView(hdr.buffer);
+  hdr.set([0x53, 0x53, 0x49, 0x31], 0);          // "SSI1"
+  dv.setUint8(4, 1); dv.setUint8(5, 0);          // version, flags
+  dv.setUint16(6, W, true); dv.setUint16(8, H, true);
+  dv.setUint8(10, 2); dv.setUint8(11, 0);        // bpp, palette (W,B,R)
+  dv.setUint16(12, CHUNK, true); dv.setUint16(14, DATA_CHUNKS, true);
+  dv.setUint32(16, payload.length, true); dv.setUint32(20, crc32(payload), true); dv.setUint32(24, id, true);
+  dv.setUint32(28, crc32(hdr.subarray(0, 28)), true);
+  const out = [];
+  const add = (idx, bytes) => out.push([id, idx, crc32(bytes), b64(bytes)]);
+  add(0, hdr);
+  const parity = new Uint8Array(CHUNK);
+  for (let c = 0; c < DATA_CHUNKS; c++) {
+    const chunk = payload.subarray(c * CHUNK, (c + 1) * CHUNK);
+    add(c + 1, chunk);
+    for (let i = 0; i < CHUNK; i++) parity[i] ^= chunk[i];
+  }
+  add(11, parity);
+  add(12, hdr);
+  return out;
+}
+
+function loadBitmap(file) {
+  return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image(); im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = rej; im.src = u; });
+}
+
+$('drop').onclick = () => $('files').click();
+$('drop').ondragover = e => e.preventDefault();
+$('drop').ondrop = e => { e.preventDefault(); setFiles(e.dataTransfer.files); };
+$('files').onchange = e => setFiles(e.target.files);
+function setFiles(list) { files = [...list].filter(f => f.type.startsWith('image/')).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true})); $('status').textContent = files.length + ' pictures selected'; $('go').disabled = !files.length; }
+
+$('go').onclick = async () => {
+  $('go').disabled = true; $('dl').disabled = true; rows = []; $('grid').innerHTML = '';
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d', { willReadFrequently: true });
+  let id = parseInt($('startid').value, 10) || 1;
+  for (let f = 0; f < files.length; f++) {
+    $('status').textContent = `Converting ${f + 1}/${files.length}: ${files[f].name}`;
+    await new Promise(r => setTimeout(r));
+    try {
+      const im = await loadBitmap(files[f]);
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
+      const s = ($('fit').value === 'cover') ? Math.max(W / im.width, H / im.height) : Math.min(W / im.width, H / im.height);
+      const dw = im.width * s, dh = im.height * s;
+      cx.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      const codes = quantise(cx.getImageData(0, 0, W, H).data, $('dither').value, parseFloat($('red').value));
+      const payload = pack2bpp(codes);
+      rows.push(...buildRecord(id, payload));
+      // preview of what the panel will show
+      const pv = document.createElement('canvas'); pv.width = W; pv.height = H; const pc = pv.getContext('2d'), d = pc.createImageData(W, H);
+      const col = [[255,255,255],[0,0,0],[200,25,25],[255,255,255]];
+      for (let i = 0; i < codes.length; i++) { const c = col[codes[i]]; d.data[i*4] = c[0]; d.data[i*4+1] = c[1]; d.data[i*4+2] = c[2]; d.data[i*4+3] = 255; }
+      pc.putImageData(d, 0, 0);
+      const box = document.createElement('div'); box.className = 'thumb'; box.appendChild(pv); box.append('ID ' + id + ' · ' + files[f].name); $('grid').appendChild(box);
+      id++;
+    } catch (e) { console.error(e); }
+  }
+  $('status').textContent = `Done: ${rows.length / 13} images, ${rows.length} sheet rows.`;
+  $('go').disabled = false; $('dl').disabled = !rows.length;
+};
+
+$('dl').onclick = () => {
+  const csv = 'image_id,chunk_idx,crc32,data\n' + rows.map(r => `${r[0]},${r[1]},${r[2]},"${r[3]}"`).join('\n') + '\n';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'screensaver_sheet.csv'; a.click();
+};
+</script>
+</body>
+</html>
