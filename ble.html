@@ -621,37 +621,70 @@
 
     <!-- WiFi + Colour Screensaver Card -->
     <div class="card" id="screensaver-card">
-      <h2 style="margin-bottom: 0.4rem;">WiFi &amp; Colour Screensaver</h2>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.9rem;">
-        Saved on the E-Reader (up to 4 networks). It uses these networks to download pictures from your Google Apps Script for the
-        colour screensaver, Picture Frame and Photo Screensaver Mode. Connect over BLE first (e-reader: <i>Menu &rarr; Device &rarr; Wireless BLE Upload</i>).
-      </p>
-      <details open style="margin: 0 0 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--border); border-radius: 0.5rem; font-size: 0.85rem; line-height: 1.55;">
-        <summary style="cursor: pointer; font-weight: 600;">Easy setup (5 steps)</summary>
-        <ol style="margin: 0.6rem 0 0.4rem 1.1rem; padding: 0;">
-          <li><b>Make the images.</b> Open the <a href="./screensaver.html" style="color: var(--accent);">Screensaver Converter</a>, add your pictures, pick the orientation and download the CSV.</li>
-          <li><b>Fill a Google Sheet.</b> Create a sheet, rename its tab to exactly <code>Images</code>, then <i>File &rarr; Import &rarr; Upload &rarr; Replace current sheet</i> with the CSV. One sheet works forever, nothing to update.</li>
-          <li><b>Add the script.</b> In the sheet: <i>Extensions &rarr; Apps Script</i>. Paste the code from the converter's <i>Apps Script</i> box over <code>Code.gs</code>, save, pick <code>doGet</code> and press <i>Run</i> once, then <i>Review permissions &rarr; Allow</i>.</li>
-          <li><b>Deploy it.</b> <i>Deploy &rarr; New deployment &rarr; Web app</i>, Execute as <b>Me</b>, access <b>Anyone</b>. Copy the <code>/exec</code> URL and add <code>?k=YOUR_SECRET</code> (the converter builds this URL for you).</li>
-          <li><b>Send it to the e-reader.</b> On the device open <i>Menu &rarr; Device &rarr; Wireless BLE Upload</i>, press Connect on this page, fill in WiFi name, password and the URL below, then <i>Save to E-Reader</i>.</li>
-        </ol>
-        <div style="margin-top: 0.5rem;"><b>Then, on the e-reader</b> (<i>Menu &rarr; Screensaver &amp; Frame</i>):</div>
-        <ul style="margin: 0.3rem 0 0.4rem 1.1rem; padding: 0;">
-          <li><b>Show Screensaver Now</b> downloads the first images and shows one (about 3 min the first time).</li>
-          <li><b>Picture Frame</b> (main menu) stays awake: D4 = previous, D5 = next (tap twice to skip two), D9 = exit. Choose <i>Frame order</i> Shuffle or In order. It checks online for more images when the list runs out and leaves itself under 25% battery.</li>
-          <li><b>Photo Screensaver Mode</b> sleeps between pictures: a new one every 10 min, fresh downloads every 3 h, stops under 25% battery.</li>
-        </ul>
-        <div style="color: var(--text-muted);">Trouble? &ldquo;HTTP 403&rdquo; = web app access is not <i>Anyone</i> or step 3 was skipped. &ldquo;ERR forbidden&rdquo; = wrong or missing <code>?k=</code> key. A null error mentioning <code>getLastRow</code> = the tab is not called <code>Images</code>. &ldquo;In order&rdquo; needs the latest script from the converter.</div>
-      </details>
-      <div id="wifi-slots"></div>
-      <label style="display:block; font-size:0.8rem; color: var(--text-muted); margin: 0.9rem 0 0.25rem;">Apps Script web app URL (ends in /exec, include ?k=YOUR_KEY)</label>
-      <input id="ss-url" type="text" placeholder="https://script.google.com/macros/s/.../exec?k=secret" style="width:100%; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background: transparent; color: inherit; font-family: var(--mono-font);">
-      <label style="display:flex; gap:0.5rem; align-items:center; margin-top:0.6rem; font-size:0.9rem;">
-        <input id="ss-enabled" type="checkbox" checked> Show colour screensaver after sleep
-      </label>
-      <div style="margin-top: 0.9rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
-        <button id="ss-save-btn" class="action-btn" disabled>Save to E-Reader</button>
+      <style>
+        #screensaver-card .ss-step { border: 1px solid var(--border); border-radius: 0.6rem; padding: 0.85rem 0.95rem; margin-bottom: 0.8rem; }
+        #screensaver-card .ss-step h3 { margin: 0 0 0.2rem; font-size: 0.98rem; display: flex; align-items: center; gap: 0.5rem; }
+        #screensaver-card .ss-num { display:inline-flex; width:1.5rem; height:1.5rem; border-radius:50%; background: var(--accent); color:#fff; font-size:0.8rem; align-items:center; justify-content:center; flex-shrink:0; }
+        #screensaver-card .ss-hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 0.6rem; line-height: 1.5; }
+        #screensaver-card .ss-in { width:100%; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background:transparent; color:inherit; font-family: inherit; box-sizing: border-box; }
+        #screensaver-card .ss-row { display:flex; gap:0.5rem; margin-bottom:0.45rem; flex-wrap:wrap; align-items:center; }
+        #screensaver-card .ss-row .ss-in { flex:1; min-width:140px; }
+        #screensaver-card .ss-mini { padding:0.4rem 0.7rem; border-radius:0.4rem; border:1px solid var(--border); background:transparent; color:inherit; cursor:pointer; font-size:0.82rem; }
+        #screensaver-card .ss-mini:hover { border-color: var(--accent); }
+        #screensaver-card .ss-msg { font-size:0.84rem; margin-top:0.45rem; min-height:1.2em; }
+        #screensaver-card .ss-ok { color:#10b981; } #screensaver-card .ss-bad { color:#ef4444; } #screensaver-card .ss-wait { color:#f59e0b; }
+      </style>
+      <h2 style="margin-bottom: 0.4rem;">WiFi &amp; Colour Screensaver Setup</h2>
+      <p class="ss-hint">Three steps. Settings are saved on the e-reader and used by the colour screensaver, Picture Frame and Photo Screensaver Mode.
+        First put the e-reader in upload mode (<i>Menu &rarr; Device &rarr; Wireless BLE Upload</i>) and connect above.</p>
+      <div id="ss-conn" class="ss-msg" style="margin:0 0 0.8rem;"></div>
+
+      <div class="ss-step">
+        <h3><span class="ss-num">1</span> WiFi network</h3>
+        <p class="ss-hint">Use a 2.4 GHz network. The e-reader joins the strongest saved network it can see.</p>
+        <div id="wifi-slots"></div>
+        <button class="ss-mini" id="wifi-add-btn" type="button">+ Add another network</button>
       </div>
+
+      <div class="ss-step">
+        <h3><span class="ss-num">2</span> Google Apps Script</h3>
+        <p class="ss-hint">
+          a) Press <b>Copy script</b>, then in your Google Sheet open <i>Extensions &rarr; Apps Script</i>, replace <code>Code.gs</code> with it and save.
+          Make the sheet tab named <code>Images</code> and import the CSV from the <a href="./screensaver.html" style="color: var(--accent);">Screensaver Converter</a>.<br>
+          b) Press <i>Run</i> once (pick <code>doGet</code>) &rarr; <i>Review permissions</i> &rarr; <i>Allow</i>.<br>
+          c) <i>Deploy &rarr; New deployment &rarr; Web app</i>, Execute as <b>Me</b>, access <b>Anyone</b>, then paste the <code>/exec</code> link below.
+        </p>
+        <div class="ss-row">
+          <input id="ss-key" class="ss-in" type="text" placeholder="Secret key" maxlength="40" style="max-width:220px;">
+          <button class="ss-mini" id="ss-gen-btn" type="button">Generate key</button>
+          <button class="ss-mini" id="ss-copy-btn" type="button">Copy script</button>
+        </div>
+        <input id="ss-url" class="ss-in" type="text" placeholder="Paste the web app link (https://script.google.com/macros/s/.../exec)" style="margin-bottom:0.45rem;">
+        <div class="ss-row" style="margin-bottom:0;">
+          <button class="ss-mini" id="ss-test-btn" type="button">Test link</button>
+          <span id="ss-test-msg" class="ss-msg" style="margin:0;"></span>
+        </div>
+      </div>
+
+      <div class="ss-step">
+        <h3><span class="ss-num">3</span> Save to the e-reader</h3>
+        <label style="display:flex; gap:0.5rem; align-items:center; margin:0.3rem 0 0.7rem; font-size:0.9rem;">
+          <input id="ss-enabled" type="checkbox" checked> Show colour screensaver after sleep
+        </label>
+        <button id="ss-save-btn" class="action-btn" disabled>Save to E-Reader</button>
+        <div id="ss-status" class="ss-msg"></div>
+      </div>
+
+      <details style="font-size: 0.82rem; color: var(--text-muted);">
+        <summary style="cursor:pointer;">Using it on the e-reader / troubleshooting</summary>
+        <ul style="margin: 0.5rem 0 0.2rem 1.1rem; padding: 0; line-height:1.6;">
+          <li><b>Menu &rarr; Screensaver &amp; Frame &rarr; Show Screensaver Now</b> downloads the first images (about 3 min) and shows one.</li>
+          <li><b>Picture Frame</b> (main menu): D4 previous, D5 next (double-tap skips two), D9 exit. Shuffle or In order; checks online when the list runs out; stops under 25% battery.</li>
+          <li><b>Photo Screensaver Mode</b>: new picture every 10 min while sleeping, fresh downloads every 3 h, stops under 25% battery.</li>
+          <li>&ldquo;Test link&rdquo; says <i>403</i>: access is not <i>Anyone</i>, or step b was skipped. <i>Wrong key</i>: the key differs from the one in <code>Code.gs</code>. <i>Tab name</i>: rename the sheet tab to <code>Images</code>.</li>
+          <li>BLE keeps the e-reader awake as long as this page stays connected (it sends a keep-alive) and reconnects by itself if the link drops.</li>
+        </ul>
+      </details>
     </div>
 
     <!-- Wireless Firmware OTA Card -->
@@ -852,6 +885,41 @@
     // =========================================================================
     // WEB BLUETOOTH (BLE) HANDLER
     // =========================================================================
+    let userDisconnect = false;
+    let reconnecting = false;
+    let keepAliveTimer = null;
+
+    async function attachGatt() {
+      bleServer = await bleDevice.gatt.connect();
+      const service = await bleServer.getPrimaryService(BLE_SERVICE_UUID);
+      bleCtrlChar = await service.getCharacteristic(BLE_CHAR_CTRL_UUID);
+      bleDataChar = await service.getCharacteristic(BLE_CHAR_DATA_UUID);
+      await bleCtrlChar.startNotifications();
+      bleCtrlChar.addEventListener('characteristicvaluechanged', onBleNotification);
+      startKeepAlive();
+    }
+
+    // The e-reader closes upload mode after a while without commands; a silent ping every 8 s keeps it open.
+    function startKeepAlive() {
+      stopKeepAlive();
+      keepAliveTimer = setInterval(async () => {
+        if (!bleCtrlChar || !bleServer || !bleServer.connected || isTransferring || isFlashingOta) return;
+        try {
+          const ping = new Uint8Array([0x30]);
+          if (bleCtrlChar.writeValueWithoutResponse) await bleCtrlChar.writeValueWithoutResponse(ping);
+          else await bleCtrlChar.writeValue(ping);
+        } catch (e) { /* a real drop is handled by the disconnect event */ }
+      }, 8000);
+    }
+    function stopKeepAlive() { if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; } }
+
+    function showBleConnectedUi() {
+      bleConnectBtn.disabled = true;
+      bleDisconnectBtn.disabled = false;
+      refreshBooksBtn.disabled = false;
+      updateStatusBadge(true, 'ble');
+    }
+
     bleConnectBtn.addEventListener('click', async () => {
       if (!navigator.bluetooth) {
         alert('Web Bluetooth is not supported in this browser. Please use Chrome, Edge, Opera, or Bluefy (iOS).');
@@ -859,6 +927,7 @@
       }
 
       try {
+        userDisconnect = false;
         log('[BLE] Requesting Bluetooth device with name "ESP32-Ereader"...');
         bleDevice = await navigator.bluetooth.requestDevice({
           filters: [{ name: 'ESP32-Ereader' }],
@@ -867,24 +936,10 @@
 
         bleDevice.addEventListener('gattserverdisconnected', onBleDisconnected);
 
-        log('[BLE] Device selected! Connecting to GATT server...');
-        bleServer = await bleDevice.gatt.connect();
-
-        log('[BLE] Connected! Locating E-Reader service...');
-        const service = await bleServer.getPrimaryService(BLE_SERVICE_UUID);
-
-        log('[BLE] Getting control and data characteristics...');
-        bleCtrlChar = await service.getCharacteristic(BLE_CHAR_CTRL_UUID);
-        bleDataChar = await service.getCharacteristic(BLE_CHAR_DATA_UUID);
-
-        await bleCtrlChar.startNotifications();
-        bleCtrlChar.addEventListener('characteristicvaluechanged', onBleNotification);
-
+        log('[BLE] Device selected! Connecting...');
+        await attachGatt();
         log('[BLE] Ready! Paired successfully with ESP32-Ereader.', '#10b981');
-        bleConnectBtn.disabled = true;
-        bleDisconnectBtn.disabled = false;
-        refreshBooksBtn.disabled = false;
-        updateStatusBadge(true, 'ble');
+        showBleConnectedUi();
 
         // Automatically fetch library stored on E-Reader
         setTimeout(requestBookList, 300);
@@ -896,13 +951,13 @@
     });
 
     bleDisconnectBtn.addEventListener('click', () => {
+      userDisconnect = true;
       if (bleDevice && bleDevice.gatt.connected) {
         bleDevice.gatt.disconnect();
       }
     });
 
-    function onBleDisconnected() {
-      log('[BLE] Disconnected from E-Reader.', '#f59e0b');
+    function showBleDisconnectedUi() {
       bleConnectBtn.disabled = false;
       bleDisconnectBtn.disabled = true;
       refreshBooksBtn.disabled = true;
@@ -911,6 +966,41 @@
       bleDataChar = null;
       updateStatusBadge(false);
       resetBookListUI();
+    }
+
+    // Unexpected drops: try to reconnect to the same device a few times before giving up.
+    async function autoReconnect() {
+      if (reconnecting) return;
+      reconnecting = true;
+      for (let n = 1; n <= 5 && !userDisconnect; n++) {
+        log(`[BLE] Connection lost, reconnecting (${n}/5)...`, '#f59e0b');
+        await new Promise(r => setTimeout(r, 1000 * n));
+        try {
+          await attachGatt();
+          log('[BLE] Reconnected.', '#10b981');
+          showBleConnectedUi();
+          reconnecting = false;
+          return;
+        } catch (e) { /* retry */ }
+      }
+      reconnecting = false;
+      if (!userDisconnect) log('[BLE ERR] Could not reconnect. Check the e-reader is still in upload mode and press Connect.', '#ef4444');
+      showBleDisconnectedUi();
+    }
+
+    function onBleDisconnected() {
+      stopKeepAlive();
+      bleServer = null;
+      bleCtrlChar = null;
+      bleDataChar = null;
+      if (pendingOpResolver) { pendingOpResolver({ success: false, reason: 'Connection lost' }); pendingOpResolver = null; }
+      if (userDisconnect || isTransferring || isFlashingOta) {
+        log('[BLE] Disconnected from E-Reader.', '#f59e0b');
+        showBleDisconnectedUi();
+      } else {
+        updateStatusBadge(false);
+        autoReconnect();
+      }
     }
 
     let bleReadyResolver = null;
@@ -1267,20 +1357,145 @@
     // =========================================================================
     // WIFI + COLOUR SCREENSAVER SETTINGS
     // =========================================================================
+    const GS_TEMPLATE = "/**\n * E-reader colour screensaver backend (Google Apps Script web app).\n *\n * Sheet tab \"__SHEET__\", row 1 = header, then one row per chunk:\n *   A image_id | B chunk_idx | C crc32 (decimal) | D base64 data\n * Generate the CSV with the Screensaver Converter page and import it once; you never have to\n * update it again. The device asks for N random images every week and prefers ones it does not\n * already hold, so a sheet with as few as ~20 images keeps rotating forever.\n *\n * Deploy: Deploy > New deployment > Web app > Execute as: Me, Who has access: Anyone.\n * Device calls (k must equal SECRET):\n *   ?a=list&n=14&have=3,8&k=SECRET   -> \"SS1\\nL 5,9,12,...\\nEND\"   (n random ids, unseen first)\n *   ?a=list&n=14&mode=seq&after=9&k=SECRET -> next n ids in sheet order after id 9, wrapping (picture frame loop)\n *   ?a=img&id=5&k=SECRET             -> \"SS1\\nC 5 0 <crc hex> <base64>\\n...\\nEND\"\n *   ?a=img&id=5&c=3,7&k=SECRET       -> only the listed chunk indexes (used for repairs)\n */\nconst SECRET = '__SECRET__';\nconst SHEET_NAME = '__SHEET__';\n\nfunction doGet(e) {\n  const p = e.parameter || {};\n  if (p.k !== SECRET) return text_('ERR forbidden');\n  if (p.a === 'list') return text_(list_(parseInt(p.n, 10) || 14, p.have, p.mode, parseInt(p.after, 10) || 0));\n  if (p.a === 'img') return text_(image_(parseInt(p.id, 10), p.c));\n  return text_('ERR bad request');\n}\n\nfunction text_(s) {\n  return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.TEXT);\n}\n\n// Image ids are cached for 10 min so repeated device calls do not rescan the sheet.\nfunction ids_() {\n  const cache = CacheService.getScriptCache();\n  const hit = cache.get('ids');\n  if (hit) return JSON.parse(hit);\n  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);\n  const last = sh.getLastRow();\n  const col = last > 1 ? sh.getRange(2, 1, last - 1, 1).getValues() : [];\n  const seen = {};\n  col.forEach(function (r) { if (r[0] !== '') seen[r[0]] = true; });\n  const ids = Object.keys(seen).map(Number);\n  cache.put('ids', JSON.stringify(ids), 600);\n  return ids;\n}\n\nfunction shuffle_(a) {\n  for (let i = a.length - 1; i > 0; i--) {\n    const j = Math.floor(Math.random() * (i + 1));\n    const t = a[i]; a[i] = a[j]; a[j] = t;\n  }\n  return a;\n}\n\n// Random picks, images the device does not hold yet come first. With 30 images and n=14 every\n// sync brings new pictures; with fewer than n images you simply get all of them.\nfunction list_(n, haveCsv, mode, after) {\n  if (mode === 'seq') {   // fixed loop: the next n ids in ascending order after `after`, wrapping around\n    const all = ids_().slice().sort(function (a, b) { return a - b; });\n    let s = 0;\n    while (s < all.length && all[s] <= after) s++;\n    const seq = [];\n    for (let i = 0; i < Math.min(n, all.length); i++) seq.push(all[(s + i) % all.length]);\n    return 'SS1\\nL ' + seq.join(',') + '\\nEND';\n  }\n  const have = {};\n  (haveCsv ? String(haveCsv).split(',') : []).forEach(function (x) { have[Number(x)] = true; });\n  const ids = ids_();\n  const fresh = shuffle_(ids.filter(function (id) { return !have[id]; }));\n  const old = shuffle_(ids.filter(function (id) { return have[id]; }));\n  const pick = fresh.concat(old).slice(0, Math.min(n, ids.length));\n  return 'SS1\\nL ' + pick.join(',') + '\\nEND';\n}\n\nfunction image_(id, chunkCsv) {\n  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);\n  const last = sh.getLastRow();\n  if (last < 2) return 'ERR empty';\n  const want = chunkCsv ? String(chunkCsv).split(',').map(Number) : null;\n  const data = sh.getRange(2, 1, last - 1, 4).getValues();\n  const out = ['SS1'];\n  for (let i = 0; i < data.length; i++) {\n    const r = data[i];\n    if (Number(r[0]) !== id) continue;\n    const idx = Number(r[1]);\n    if (want && want.indexOf(idx) < 0) continue;\n    out.push('C ' + id + ' ' + idx + ' ' + Number(r[2]).toString(16) + ' ' + r[3]);\n  }\n  out.push('END');\n  return out.join('\\n');\n}\n";
+    const SETUP_KEY = 'bleSetup.v1';   // remembers SSIDs, link and key in this browser (never passwords)
     const wifiSlotsEl = document.getElementById('wifi-slots');
     const ssSaveBtn = document.getElementById('ss-save-btn');
-    for (let i = 0; i < 4; i++) {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex; gap:0.5rem; margin-bottom:0.4rem; flex-wrap:wrap;';
-      row.innerHTML = `<input id="wifi-ssid-${i}" type="text" maxlength="32" placeholder="Network ${i + 1} SSID (blank = clear)" style="flex:1; min-width:150px; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background:transparent; color:inherit;">
-        <input id="wifi-pass-${i}" type="password" placeholder="Password" style="flex:1; min-width:150px; padding:0.5rem; border-radius:0.4rem; border:1px solid var(--border); background:transparent; color:inherit;">`;
-      wifiSlotsEl.appendChild(row);
+    const ssUrlEl = document.getElementById('ss-url');
+    const ssKeyEl = document.getElementById('ss-key');
+    const ssStatusEl = document.getElementById('ss-status');
+    const ssTestMsgEl = document.getElementById('ss-test-msg');
+    const ssConnEl = document.getElementById('ss-conn');
+    const wifiRows = [];          // { el, ssid, pass, eye, dirty }
+    let wifiRemoved = false;      // a row was removed: clear the freed slots on the device
+
+    function setMsg(el, text, cls) { el.textContent = text; el.className = el.className.replace(/\bss-(ok|bad|wait)\b/g, '').trim() + (cls ? ' ss-' + cls : ''); }
+
+    function loadSetup() {
+      try { return JSON.parse(localStorage.getItem(SETUP_KEY) || '{}'); } catch (e) { return {}; }
+    }
+    function saveSetup() {
+      try {
+        localStorage.setItem(SETUP_KEY, JSON.stringify({
+          ssids: wifiRows.map(r => r.ssid.value.trim()).filter(Boolean),
+          url: ssUrlEl.value.trim(), key: ssKeyEl.value.trim()
+        }));
+      } catch (e) {}
+    }
+
+    function addWifiRow(ssid) {
+      if (wifiRows.length >= 4) return;
+      const el = document.createElement('div');
+      el.className = 'ss-row';
+      el.innerHTML = `<input type="text" class="ss-in" maxlength="32" placeholder="Network name (SSID)" autocomplete="off">
+        <input type="password" class="ss-in" placeholder="Password" autocomplete="off">
+        <button type="button" class="ss-mini" title="Show password">Show</button>
+        <button type="button" class="ss-mini" title="Remove network">&times;</button>`;
+      const [ssidEl, passEl, eye, del] = el.children;
+      const row = { el, ssid: ssidEl, pass: passEl, dirty: false };
+      ssidEl.value = ssid || '';
+      ssidEl.addEventListener('input', () => { row.dirty = true; saveSetup(); });
+      passEl.addEventListener('input', () => { row.dirty = true; });
+      eye.addEventListener('click', () => {
+        passEl.type = passEl.type === 'password' ? 'text' : 'password';
+        eye.textContent = passEl.type === 'password' ? 'Show' : 'Hide';
+      });
+      del.addEventListener('click', () => {
+        wifiRows.splice(wifiRows.indexOf(row), 1);
+        el.remove();
+        wifiRemoved = true;
+        if (!wifiRows.length) addWifiRow('');
+        updateAddBtn(); saveSetup();
+      });
+      wifiRows.push(row);
+      wifiSlotsEl.appendChild(el);
+      updateAddBtn();
+    }
+    function updateAddBtn() { document.getElementById('wifi-add-btn').style.display = wifiRows.length >= 4 ? 'none' : ''; }
+    document.getElementById('wifi-add-btn').addEventListener('click', () => addWifiRow(''));
+
+    // Accept a full link with ?k=KEY (splits key out) or just the deployment id
+    function normalizeUrlInput() {
+      let v = ssUrlEl.value.trim();
+      if (/^AKfy[\w-]+$/.test(v)) v = 'https://script.google.com/macros/s/' + v + '/exec';
+      try {
+        const u = new URL(v);
+        const k = u.searchParams.get('k');
+        if (k) { ssKeyEl.value = k; u.searchParams.delete('k'); }
+        v = u.origin + u.pathname;
+      } catch (e) {}
+      ssUrlEl.value = v;
+      saveSetup();
+    }
+    ssUrlEl.addEventListener('change', normalizeUrlInput);
+    ssUrlEl.addEventListener('paste', () => setTimeout(normalizeUrlInput, 0));
+    ssKeyEl.addEventListener('input', saveSetup);
+
+    function fullScriptUrl() {
+      normalizeUrlInput();
+      const base = ssUrlEl.value.trim(), key = ssKeyEl.value.trim();
+      return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'k=' + encodeURIComponent(key);
+    }
+
+    document.getElementById('ss-gen-btn').addEventListener('click', () => {
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      const a = new Uint8Array(12); crypto.getRandomValues(a);
+      ssKeyEl.value = Array.from(a, x => chars[x % chars.length]).join('');
+      saveSetup();
+      setMsg(ssTestMsgEl, 'New key generated. Copy the script so it contains this key.', 'wait');
+    });
+    document.getElementById('ss-copy-btn').addEventListener('click', async () => {
+      if (!ssKeyEl.value.trim()) document.getElementById('ss-gen-btn').click();
+      const code = GS_TEMPLATE.split('__SECRET__').join(ssKeyEl.value.trim()).split('__SHEET__').join('Images');
+      try {
+        await navigator.clipboard.writeText(code);
+        setMsg(ssTestMsgEl, 'Script copied. Paste it into Extensions > Apps Script > Code.gs and save.', 'ok');
+      } catch (e) {
+        window.prompt('Copy the script (Ctrl/Cmd+C):', code);
+      }
+    });
+
+    document.getElementById('ss-test-btn').addEventListener('click', async () => {
+      if (!ssUrlEl.value.trim()) { setMsg(ssTestMsgEl, 'Paste the web app link first.', 'bad'); return; }
+      if (!ssKeyEl.value.trim()) { setMsg(ssTestMsgEl, 'Enter the secret key first (same as in the script).', 'bad'); return; }
+      setMsg(ssTestMsgEl, 'Testing...', 'wait');
+      const url = fullScriptUrl() + '&a=list&n=1000';
+      try {
+        const r = await fetch(url, { redirect: 'follow' });
+        const t = await r.text();
+        if (r.status === 403) {
+          setMsg(ssTestMsgEl, 'Google refused it (403). Deploy as Web app with access "Anyone", and run the script once to authorize.', 'bad');
+        } else if (t.indexOf('ERR forbidden') >= 0) {
+          setMsg(ssTestMsgEl, 'Link works but the secret key does not match the one in Code.gs.', 'bad');
+        } else if (t.indexOf('getLastRow') >= 0 || t.indexOf('Cannot read properties of null') >= 0) {
+          setMsg(ssTestMsgEl, 'Script runs but there is no sheet tab named "Images". Rename the tab.', 'bad');
+        } else if (t.indexOf('ERR empty') >= 0) {
+          setMsg(ssTestMsgEl, 'Sheet tab is empty. Import the CSV from the converter.', 'bad');
+        } else if (t.indexOf('SS1') === 0) {
+          const m = t.match(/\nL ([^\n]*)/);
+          const n = m && m[1].trim() ? m[1].split(',').length : 0;
+          if (n > 0) setMsg(ssTestMsgEl, `Works! ${n} image${n === 1 ? '' : 's'} found in the sheet.`, 'ok');
+          else setMsg(ssTestMsgEl, 'Script works but the sheet has no images yet.', 'bad');
+        } else {
+          setMsg(ssTestMsgEl, 'Unexpected answer. Make sure the link ends in /exec and uses the latest deployment.', 'bad');
+        }
+      } catch (e) {
+        setMsg(ssTestMsgEl, 'Could not reach the link. Check it ends in /exec and access is "Anyone".', 'bad');
+      }
+    });
+
+    async function ensureBleReady() {
+      if (bleCtrlChar && bleServer && bleServer.connected) return true;
+      if (bleDevice && !reconnecting) {
+        try { await attachGatt(); showBleConnectedUi(); return true; } catch (e) {}
+      }
+      return false;
     }
 
     async function sendCtrlAndWait(packet, label) {
       const opPromise = new Promise((resolve, reject) => {
         pendingOpResolver = resolve;
-        setTimeout(() => reject(new Error('Timeout waiting for ' + label)), 5000);
+        setTimeout(() => reject(new Error('Timeout waiting for ' + label)), 6000);
       });
       await bleCtrlChar.writeValue(packet);
       const res = await opPromise;
@@ -1288,38 +1503,63 @@
     }
 
     ssSaveBtn.addEventListener('click', async () => {
-      if (!bleCtrlChar || !bleServer || !bleServer.connected) return;
+      if (!(await ensureBleReady())) { setMsg(ssStatusEl, 'Not connected. Press Connect above (e-reader in upload mode).', 'bad'); return; }
       const enc = new TextEncoder();
+      const url = ssUrlEl.value.trim() ? fullScriptUrl() : '';
+      ssSaveBtn.disabled = true;
       try {
-        for (let i = 0; i < 4; i++) {
-          const ssid = document.getElementById('wifi-ssid-' + i).value.trim();
-          const pass = document.getElementById('wifi-pass-' + i).value;
-          const dirty = ssid.length > 0 || document.getElementById('wifi-ssid-' + i).dataset.touched;
-          if (!dirty) continue;
-          const sb = enc.encode(ssid), pb = enc.encode(pass);
-          const packet = new Uint8Array(3 + sb.length + pb.length);
-          packet[0] = 0x20; packet[1] = i; packet[2] = sb.length;
-          packet.set(sb, 3); packet.set(pb, 3 + sb.length);
-          log(`[BLE] Saving WiFi slot ${i + 1}...`);
-          await sendCtrlAndWait(packet, 'WiFi save');
+        let slot = 0;
+        for (const row of wifiRows) {
+          const ssid = row.ssid.value.trim();
+          if (ssid || row.dirty) {
+            if (ssid && !row.pass.value && row.dirty === false) { slot++; continue; }
+            const sb = enc.encode(ssid), pb = enc.encode(row.pass.value);
+            const packet = new Uint8Array(3 + sb.length + pb.length);
+            packet[0] = 0x20; packet[1] = slot; packet[2] = sb.length;
+            packet.set(sb, 3); packet.set(pb, 3 + sb.length);
+            setMsg(ssStatusEl, `Saving WiFi "${ssid || '(cleared)'}"...`, 'wait');
+            await sendCtrlAndWait(packet, 'WiFi save');
+          }
+          slot++;
         }
-        const url = document.getElementById('ss-url').value.trim();
-        const ub = enc.encode(url);
-        const packet = new Uint8Array(2 + ub.length);
-        packet[0] = 0x21; packet[1] = document.getElementById('ss-enabled').checked ? 1 : 0;
-        packet.set(ub, 2);
-        log('[BLE] Saving screensaver settings...');
-        await sendCtrlAndWait(packet, 'screensaver save');
-        log('[BLE SUCCESS] WiFi + screensaver saved. On the e-reader open Menu > Screensaver & Frame > Show Screensaver Now to fetch images right away.', '#10b981');
+        if (wifiRemoved) {   // clear slots freed by removed rows
+          for (let s = wifiRows.length; s < 4; s++) {
+            await sendCtrlAndWait(new Uint8Array([0x20, s, 0]), 'WiFi clear');
+          }
+          wifiRemoved = false;
+        }
+        if (url) {
+          const ub = enc.encode(url);
+          const packet = new Uint8Array(2 + ub.length);
+          packet[0] = 0x21; packet[1] = document.getElementById('ss-enabled').checked ? 1 : 0;
+          packet.set(ub, 2);
+          setMsg(ssStatusEl, 'Saving screensaver link...', 'wait');
+          await sendCtrlAndWait(packet, 'screensaver save');
+        }
+        saveSetup();
+        setMsg(ssStatusEl, 'Saved! On the e-reader: Menu > Screensaver & Frame > Show Screensaver Now to fetch images.', 'ok');
+        log('[BLE SUCCESS] WiFi + screensaver saved.', '#10b981');
       } catch (err) {
+        setMsg(ssStatusEl, 'Failed: ' + err.message + '. Press Save again (it reconnects automatically).', 'bad');
         log('[BLE ERR] ' + err.message, '#ef4444');
+      } finally {
+        ssSaveBtn.disabled = false;
       }
     });
-    for (let i = 0; i < 4; i++) {
-      document.getElementById('wifi-ssid-' + i).addEventListener('input', e => { e.target.dataset.touched = '1'; });
-    }
+
+    (function initSetup() {
+      const saved = loadSetup();
+      (saved.ssids && saved.ssids.length ? saved.ssids : ['']).slice(0, 4).forEach(addWifiRow);
+      wifiRows.forEach(r => { r.dirty = false; });
+      if (saved.url) ssUrlEl.value = saved.url;
+      if (saved.key) ssKeyEl.value = saved.key;
+    })();
+
     setInterval(() => {
-      ssSaveBtn.disabled = !(bleCtrlChar && bleServer && bleServer.connected);
+      const ok = !!(bleCtrlChar && bleServer && bleServer.connected);
+      ssSaveBtn.disabled = !ok;
+      if (ok) setMsg(ssConnEl, 'E-reader connected.', 'ok');
+      else setMsg(ssConnEl, reconnecting ? 'Connection lost, reconnecting...' : 'Not connected: put the e-reader in upload mode, then press Connect above.', reconnecting ? 'wait' : 'bad');
     }, 500);
 
     // =========================================================================
